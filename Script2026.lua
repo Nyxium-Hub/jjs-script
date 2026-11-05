@@ -33,7 +33,6 @@ local function get_hum() local c = LocalPlayer.Character or LocalPlayer.Characte
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
 
 -- CONSOLE LOCK ON
-local lock_on_target = nil
 local lock_square = Drawing.new("Square")
 lock_square.Thickness = 2; lock_square.Color = Color3.fromRGB(255, 0, 0); lock_square.Transparency = 1; lock_square.Filled = false; lock_square.Visible = false
 
@@ -289,20 +288,32 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand then hum.PlatformStand = false end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin then hum.PlatformStand = false end
     end
 end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (COM TWEEN E CHECAGEM)
+-- AUTO FARM PUMPKIN
 local farm_state = "IDLE"
 local function has_pumpkin(plr)
     local char = plr.Character
     if not char then return false end
-    local bp = plr:FindFirstChild("Backpack")
-    if bp then for _, item in ipairs(bp:GetChildren()) do if item.Name:lower():find("pumpkin") or item.Name:lower():find("pum") or item.Name:lower():find("abóbora") then return true end end end
-    for _, item in ipairs(char:GetChildren()) do if item:IsA("Tool") and (item.Name:lower():find("pumpkin") or item.Name:lower():find("pum") or item.Name:lower():find("abóbora")) then return true end end
+    
+    local bp = plr:FindFirstChildOfClass("Backpack")
+    if bp then 
+        for _, item in ipairs(bp:GetChildren()) do 
+            local n = item.Name:lower()
+            if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end 
+        end 
+    end
+    for _, item in ipairs(char:GetChildren()) do 
+        if item:IsA("Tool") or item:IsA("Accessory") then
+            local n = item.Name:lower()
+            if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end 
+        end 
+    end
+    if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
     return false
 end
 
@@ -312,59 +323,55 @@ local function start_auto_farm()
             if farm_state == "SAFE" then local hum = get_hum() if hum then hum.PlatformStand = false end farm_state = "IDLE" end
             return
         end
-        if farm_state == "ATTACKING" or farm_state == "MOVING" then return end
+        if farm_state ~= "IDLE" then return end
         
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- Verifica se EU já sou o pumpkin
         if has_pumpkin(LocalPlayer) then
-            if farm_state ~= "SAFE" then
-                farm_state = "SAFE"; hum.PlatformStand = true
-                local safe_tween = TweenService:Create(my_hrp, TweenInfo.new(1, Enum.EasingStyle.Linear), {CFrame = my_hrp.CFrame + Vector3.new(0, 300, 0)})
-                safe_tween:Play(); safe_tween.Completed:Wait()
-                task.spawn(function()
-                    while cfg.auto_farm_pumpkin and farm_state == "SAFE" and has_pumpkin(LocalPlayer) do
-                        local current_hrp = get_hrp()
-                        if current_hrp then
-                            local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = current_hrp.Position; bp.Parent = current_hrp
-                            task.wait(0.5); bp:Destroy()
-                        else break end
-                        task.wait(0.5)
-                    end
-                    if hum then hum.PlatformStand = false end; farm_state = "IDLE"
-                end)
-            end
+            farm_state = "SAFE"
+            hum.PlatformStand = true
+            local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = my_hrp.Position + Vector3.new(0, 300, 0); bp.Parent = my_hrp
+            task.spawn(function()
+                while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
+                    local current_hrp = get_hrp()
+                    if current_hrp and bp then bp.Position = Vector3.new(current_hrp.Position.X, current_hrp.Position.Y + 10, current_hrp.Position.Z) else break end
+                    task.wait(0.5)
+                end
+                if bp then bp:Destroy() end
+                if hum then hum.PlatformStand = false end
+                farm_state = "IDLE"
+            end)
             return
-        else
-            if farm_state == "SAFE" then hum.PlatformStand = false; farm_state = "IDLE" end
         end
 
-        -- Procura alguém com o Pumpkin
         local target = nil
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
         end
         if not target then return end
 
-        -- Move até o alvo e ataca
         farm_state = "MOVING"
         task.spawn(function()
-            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-            if not target_hrp then farm_state = "IDLE" return end
-            local dist = (my_hrp.Position - target_hrp.Position).Magnitude
-            local duration = math.clamp(dist / 200, 0.2, 1)
-            local tween = TweenService:Create(my_hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
-            tween:Play(); tween.Completed:Wait()
-
-            farm_state = "ATTACKING"
-            local end_time = tick() + 2
-            while tick() < end_time and cfg.auto_farm_pumpkin do
-                if not target.Character then break end
-                pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                task.wait(0.1)
-            end
+            local success, err = pcall(function()
+                local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+                if not target_hrp then return end
+                hum.PlatformStand = true
+                local dist = (my_hrp.Position - target_hrp.Position).Magnitude
+                local duration = math.clamp(dist / 150, 0.3, 1.5)
+                local tween = TweenService:Create(my_hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
+                tween:Play(); tween.Completed:Wait()
+                hum.PlatformStand = false
+                farm_state = "ATTACKING"
+                local end_time = tick() + 2
+                while tick() < end_time and cfg.auto_farm_pumpkin do
+                    if not target.Character then break end
+                    pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                    task.wait(0.1)
+                end
+            end)
+            if not success then warn("AutoFarm erro: ", err) end
             farm_state = "IDLE"
         end)
     end)
