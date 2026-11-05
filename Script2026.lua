@@ -22,7 +22,13 @@ K.cfg = {
     lock_on_enabled = false, lock_on_range = 20, lock_on_key = Enum.KeyCode.LeftShift, lock_on_holding = false,
     speed_bypass = false, speed_val = 60, noclip_bypass = false, noclip_speed = 60,
     fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
+    
+    -- Farm e Portas
     auto_farm_pumpkin = false,
+    esp_door = false,
+    auto_open_door = false,
+    
+    -- ESP Jogadores
     esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
     esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false,
 }
@@ -119,7 +125,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ESP
+-- ESP JOGADORES
 local esp_objects, esp_chams = {}, {}
 local function create_esp(plr)
     if plr == LocalPlayer or esp_objects[plr] then return end
@@ -150,8 +156,12 @@ end
 local skel_r15 = {{"Head","UpperTorso"},{"UpperTorso","LowerTorso"},{"LowerTorso","HumanoidRootPart"},{"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},{"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},{"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},{"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"}}
 local skel_r6 = {{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
 
+-- ESP PORTAS HALLOWEEN
+local esp_doors = {}
+
 local function start_esp()
     RunService.RenderStepped:Connect(function()
+        -- ESP Jogadores
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr == LocalPlayer then continue end
             if not cfg.esp_enabled or not is_alive(plr) then
@@ -204,13 +214,39 @@ local function start_esp()
                 for j = i, #obj.skeleton do obj.skeleton[j].Visible = false end
             else for _, line in ipairs(obj.skeleton) do line.Visible = false end end
         end
+
+        -- ESP PORTAS HALLOWEEN
+        if cfg.esp_door then
+            for _, door in ipairs(Workspace:GetDescendants()) do
+                if door.Name == "HalloweenDoor" and door:IsA("Model") or (door:IsA("BasePart") and door.Name == "HalloweenDoor") then
+                    local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
+                    if part then
+                        local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
+                        if on_screen then
+                            if not esp_doors[door] then
+                                esp_doors[door] = Drawing.new("Text")
+                                esp_doors[door].Size = 14
+                                esp_doors[door].Center = true
+                                esp_doors[door].Outline = true
+                                esp_doors[door].Color = Color3.fromRGB(255, 165, 0)
+                            end
+                            esp_doors[door].Text = "Halloween Door"
+                            esp_doors[door].Position = Vector2.new(pos.X, pos.Y)
+                            esp_doors[door].Visible = true
+                        else
+                            if esp_doors[door] then esp_doors[door].Visible = false end
+                        end
+                    end
+                end
+            end
+        else
+            for _, txt in pairs(esp_doors) do txt.Visible = false end
+        end
     end)
 end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
-local TweenService = game:GetService("TweenService")
-
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -294,25 +330,14 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN
+-- AUTO FARM PUMPKIN (TELEPORTE DIRETO)
 local farm_state = "IDLE"
 local function has_pumpkin(plr)
     local char = plr.Character
     if not char then return false end
-    
     local bp = plr:FindFirstChildOfClass("Backpack")
-    if bp then 
-        for _, item in ipairs(bp:GetChildren()) do 
-            local n = item.Name:lower()
-            if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end 
-        end 
-    end
-    for _, item in ipairs(char:GetChildren()) do 
-        if item:IsA("Tool") or item:IsA("Accessory") then
-            local n = item.Name:lower()
-            if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end 
-        end 
-    end
+    if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
+    for _, item in ipairs(char:GetChildren()) do if item:IsA("Tool") or item:IsA("Accessory") then local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
     if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
     return false
 end
@@ -346,9 +371,7 @@ local function start_auto_farm()
         end
 
         local target = nil
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
-        end
+        for _, plr in ipairs(Players:GetPlayers()) do if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end end
         if not target then return end
 
         farm_state = "MOVING"
@@ -356,12 +379,11 @@ local function start_auto_farm()
             local success, err = pcall(function()
                 local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
                 if not target_hrp then return end
-                hum.PlatformStand = true
-                local dist = (my_hrp.Position - target_hrp.Position).Magnitude
-                local duration = math.clamp(dist / 150, 0.3, 1.5)
-                local tween = TweenService:Create(my_hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
-                tween:Play(); tween.Completed:Wait()
-                hum.PlatformStand = false
+                
+                -- Teleporte Direto (Revertido para funcionar)
+                my_hrp.CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)
+                task.wait(0.1)
+                
                 farm_state = "ATTACKING"
                 local end_time = tick() + 2
                 while tick() < end_time and cfg.auto_farm_pumpkin do
@@ -377,9 +399,48 @@ local function start_auto_farm()
     end)
 end
 
+-- AUTO OPEN DOOR
+local door_opening = false
+local function start_auto_open_door()
+    RunService.Heartbeat:Connect(function()
+        if not cfg.auto_open_door or door_opening then return end
+        
+        local char, my_hrp = LocalPlayer.Character, get_hrp()
+        if not char or not my_hrp then return end
+        
+        local target_door = nil
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v.Name == "HalloweenDoor" then
+                target_door = v
+                break
+            end
+        end
+        
+        if target_door then
+            door_opening = true
+            task.spawn(function()
+                local part = target_door:IsA("Model") and (target_door.PrimaryPart or target_door:FindFirstChildWhichIsA("BasePart")) or target_door
+                if part then
+                    local my_hrp = get_hrp()
+                    if my_hrp then
+                        my_hrp.CFrame = part.CFrame * CFrame.new(0, 3, 3)
+                        task.wait(0.5)
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        task.wait(0.5)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        task.wait(1)
+                    end
+                end
+                door_opening = false
+            end)
+        end
+    end)
+end
+
 RunService.Heartbeat:Connect(update_auto_block)
 RunService.RenderStepped:Connect(update_player_movement)
 start_auto_farm()
+start_auto_open_door()
 start_esp()
 
 -- INTERFACE WIND UI
@@ -425,6 +486,9 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Section({ Title = "Halloween Door Farm" })
+FarmTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door", Desc = "TP e segura E", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
