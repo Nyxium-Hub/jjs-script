@@ -13,22 +13,37 @@ local Camera = Workspace.CurrentCamera
 
 local K = getgenv().karpa or {}
 getgenv().karpa = K
+
 K.cfg = {
-    auto_block = false, block_range = 20, auto_combo = false, combo_range = 15,
-    auto_black_flash = false, lock_on = false, lock_smoothness = 25, lock_fov = 120,
+    -- Combate
+    auto_block = false, block_range = 20,
+    auto_combo = false, combo_range = 15, combo_delay = 0.1,
+    auto_black_flash = false,
+    
+    -- Player
+    speed_bypass = false, speed_val = 60,
+    noclip_bypass = false, noclip_speed = 30,
+    v_fly = false, v_fly_speed = 100,
+    
+    -- ESP
     esp_enabled = false, esp_name = true, esp_distance = true, esp_health_bar = true,
-    esp_box = true, esp_skeleton = false, esp_chams = false, esp_character = true, esp_lines = false, anti_afk = false,
+    esp_box = true, esp_skeleton = false, esp_chams = false, esp_character = true, esp_lines = false,
+    
+    -- Misc
+    anti_afk = false,
 }
 local cfg = K.cfg
 
--- REMOTES DO AUTO BLOCK
+-- ============================================================
+-- REMOTES E FUNÇÕES AUXILIARES
+-- ============================================================
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
 local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
 
--- FUNÇÕES AUXILIARES
 local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChild("HumanoidRootPart") end
+local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
 
 local function get_closest_enemy(range)
@@ -47,7 +62,9 @@ local function get_closest_enemy(range)
     return closest
 end
 
--- AUTO BLOCK (CORRIGIDO)
+-- ============================================================
+-- AUTO BLOCK
+-- ============================================================
 local is_blocking = false
 local function update_auto_block()
     if not cfg.auto_block then
@@ -80,7 +97,73 @@ local function update_auto_block()
     end
 end
 
--- SISTEMA DE ESP
+-- ============================================================
+-- PLAYER: TP WALK, NOCLIP BYPASS, V-FLY
+-- ============================================================
+local v_fly_vel = nil
+local function update_player_movement(dt)
+    local char = LocalPlayer.Character
+    local hrp = get_hrp()
+    local hum = get_hum()
+    if not char or not hrp or not hum then return end
+    
+    -- TP WALK (Speed Bypass)
+    if cfg.speed_bypass then
+        hum.WalkSpeed = 16
+        if hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt)
+        end
+    else
+        hum.WalkSpeed = 16
+    end
+    
+    -- NOCLIP BYPASS
+    if cfg.noclip_bypass then
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = false end
+        end
+        hrp.CanCollide = false
+        -- Se estiver andando, empurra o HRP para frente para burlar o "puxão" do anticheat
+        if hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt)
+        end
+    else
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end
+    
+    -- V-FLY (Vehicle Fly Bypass)
+    if cfg.v_fly then
+        hum.PlatformStand = true
+        if not v_fly_vel or v_fly_vel.Parent ~= hrp then
+            if v_fly_vel then v_fly_vel:Destroy() end
+            v_fly_vel = Instance.new("BodyVelocity")
+            v_fly_vel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            v_fly_vel.Velocity = Vector3.zero
+            v_fly_vel.Parent = hrp
+        end
+        
+        local dir = Vector3.zero
+        local cam_cf = Camera.CFrame
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then dir += cam_cf.LookVector end
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then dir -= cam_cf.LookVector end
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then dir -= cam_cf.RightVector end
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then dir += cam_cf.RightVector end
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+        if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+        
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        v_fly_vel.Velocity = dir * cfg.v_fly_speed
+    else
+        if v_fly_vel then v_fly_vel:Destroy() v_fly_vel = nil end
+        if hum.PlatformStand then hum.PlatformStand = false end
+    end
+end
+
+-- ============================================================
+-- ESP
+-- ============================================================
 local esp_objects, esp_chams = {}, {}
 local function create_esp(plr)
     if plr == LocalPlayer or esp_objects[plr] then return end
@@ -198,24 +281,6 @@ local function start_auto_combo()
     end)
 end
 
-local function start_lock_on()
-    RunService.RenderStepped:Connect(function()
-        if not cfg.lock_on then return end
-        local enemy = get_closest_enemy(500)
-        if not enemy or not enemy.Character then return end
-        local enemy_hrp = enemy.Character:FindFirstChild("HumanoidRootPart")
-        if not enemy_hrp then return end
-        local pos, on_screen = Camera:WorldToViewportPoint(enemy_hrp.Position)
-        if on_screen then
-            local screen_center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            if (Vector2.new(pos.X, pos.Y) - screen_center).Magnitude <= cfg.lock_fov then
-                local goal_cf = CFrame.lookAt(Camera.CFrame.Position, enemy_hrp.Position)
-                Camera.CFrame = cfg.lock_smoothness > 1 and Camera.CFrame:Lerp(goal_cf, 1 / cfg.lock_smoothness) or goal_cf
-            end
-        end
-    end)
-end
-
 local function start_anti_afk()
     RunService.Heartbeat:Connect(function()
         if not cfg.anti_afk then return end
@@ -223,29 +288,54 @@ local function start_anti_afk()
     end)
 end
 
+-- INICIALIZAÇÃO DOS LOOPS
 RunService.Heartbeat:Connect(update_auto_block)
+RunService.RenderStepped:Connect(update_player_movement)
 start_auto_combo()
 start_esp()
-start_lock_on()
 start_anti_afk()
 
--- INTERFACE WIND UI ROXA
+-- INTERFACE WIND UI (TEMA ESCURO/PRETO)
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Themes = WindUI.Themes
-Themes["Nyxium Purple"] = { Main = Color3.fromRGB(20,15,25), Outline = Color3.fromRGB(80,40,120), Background = Color3.fromRGB(25,20,30), Accent = Color3.fromRGB(147,51,234), Text = Color3.fromRGB(240,240,240) }
 
-local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Nyxium Purple", Resizable = true })
+local Window = WindUI:CreateWindow({
+    Title = "Nyxium | Itadori",
+    Author = "karpa",
+    Folder = "NyxiumItadori",
+    Size = UDim2.fromOffset(520, 420),
+    Theme = "Dark", -- Voltou ao tema padrão escuro
+    Resizable = true,
+})
 
+-- ABA COMBAT
 local Tab = Window:Tab({ Title = "Combat", Icon = "swords" })
 Tab:Section({ Title = "Auto Combo (M1 + Skill 3)" })
 Tab:Toggle({ Title = "Auto Combo", Desc = "Executa M1 + Divergent Fist", Default = false, Callback = function(s) cfg.auto_combo = s end })
 Tab:Slider({ Title = "Combo Range", Value = { Min = 5, Max = 30, Default = 15 }, Callback = function(v) cfg.combo_range = v end })
+
 Tab:Section({ Title = "Auto Black Flash" })
 Tab:Toggle({ Title = "Auto Black Flash", Desc = "Tenta o timing perfeito", Default = false, Callback = function(s) cfg.auto_black_flash = s end })
+
 Tab:Section({ Title = "Auto Block (Remotes)" })
 Tab:Toggle({ Title = "Auto Block", Desc = "Ativa a defesa via Remote", Default = false, Callback = function(s) cfg.auto_block = s end })
 Tab:Slider({ Title = "Block Range", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.block_range = v end })
 
+-- ABA PLAYER
+local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+
+PlayerTab:Section({ Title = "Speed Bypass (TP Walk)" })
+PlayerTab:Toggle({ Title = "Enable Speed Bypass", Default = false, Callback = function(s) cfg.speed_bypass = s end })
+PlayerTab:Slider({ Title = "Speed Value", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) cfg.speed_val = v end })
+
+PlayerTab:Section({ Title = "Noclip Bypass" })
+PlayerTab:Toggle({ Title = "Enable Noclip Bypass", Desc = "Força a passagem sem colisão", Default = false, Callback = function(s) cfg.noclip_bypass = s end })
+PlayerTab:Slider({ Title = "Push Speed", Value = { Min = 10, Max = 100, Default = 30 }, Callback = function(v) cfg.noclip_speed = v end })
+
+PlayerTab:Section({ Title = "V-Fly (Vehicle Fly)" })
+PlayerTab:Toggle({ Title = "Enable V-Fly", Desc = "Voo não detectável", Default = false, Callback = function(s) cfg.v_fly = s end })
+PlayerTab:Slider({ Title = "Fly Speed", Value = { Min = 16, Max = 500, Default = 100 }, Callback = function(v) cfg.v_fly_speed = v end })
+
+-- ABA VISUALS (ESP)
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
 VisTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(s) cfg.esp_enabled = s end })
@@ -253,16 +343,14 @@ VisTab:Toggle({ Title = "Chams (Branco)", Default = false, Callback = function(s
 VisTab:Toggle({ Title = "Box", Default = true, Callback = function(s) cfg.esp_box = s end })
 VisTab:Toggle({ Title = "Skeleton", Default = false, Callback = function(s) cfg.esp_skeleton = s end })
 VisTab:Toggle({ Title = "Lines", Default = false, Callback = function(s) cfg.esp_lines = s end })
+
 VisTab:Section({ Title = "Informações" })
 VisTab:Toggle({ Title = "Nome", Default = true, Callback = function(s) cfg.esp_name = s end })
 VisTab:Toggle({ Title = "Personagem", Default = true, Callback = function(s) cfg.esp_character = s end })
 VisTab:Toggle({ Title = "Distância", Default = true, Callback = function(s) cfg.esp_distance = s end })
 VisTab:Toggle({ Title = "Barra de Vida", Default = true, Callback = function(s) cfg.esp_health_bar = s end })
-VisTab:Section({ Title = "Camera / Lock On" })
-VisTab:Toggle({ Title = "Lock On", Default = false, Callback = function(s) cfg.lock_on = s end })
-VisTab:Slider({ Title = "Lock FOV", Value = { Min = 20, Max = 500, Default = 120 }, Callback = function(v) cfg.lock_fov = v end })
-VisTab:Slider({ Title = "Smoothness", Value = { Min = 1, Max = 100, Default = 25 }, Callback = function(v) cfg.lock_smoothness = v end })
 
+-- ABA MISC
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 MiscTab:Section({ Title = "Outros" })
 MiscTab:Toggle({ Title = "Anti AFK", Default = false, Callback = function(s) cfg.anti_afk = s end })
