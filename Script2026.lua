@@ -22,13 +22,7 @@ K.cfg = {
     lock_on_enabled = false, lock_on_range = 20, lock_on_key = Enum.KeyCode.LeftShift, lock_on_holding = false,
     speed_bypass = false, speed_val = 60, noclip_bypass = false, noclip_speed = 60,
     fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
-    
-    -- Farm e Portas
-    auto_farm_pumpkin = false,
-    esp_door = false,
-    auto_open_door = false,
-    
-    -- ESP Jogadores
+    auto_farm_pumpkin = false, esp_door = false, auto_open_door = false,
     esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
     esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false,
 }
@@ -37,6 +31,18 @@ local cfg = K.cfg
 local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChild("HumanoidRootPart") end
 local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
+
+-- CACHE DE PORTAS
+local cached_doors = {}
+task.spawn(function()
+    while task.wait(3) do
+        local temp = {}
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v.Name == "HalloweenDoor" then table.insert(temp, v) end
+        end
+        cached_doors = temp
+    end
+end)
 
 -- CONSOLE LOCK ON
 local lock_square = Drawing.new("Square")
@@ -58,26 +64,22 @@ local function get_closest_in_range(range)
             end
         end
     end
-    return closest, min_dist
+    return closest
 end
 
 RunService.RenderStepped:Connect(function()
     if cfg.lock_on_enabled and cfg.lock_on_holding then
         local target = get_closest_in_range(cfg.lock_on_range)
-        if target and target.Character then
-            local enemy_head = target.Character:FindFirstChild("Head")
-            if enemy_head then
-                Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, enemy_head.Position)
-                local pos, on_screen = Camera:WorldToViewportPoint(enemy_head.Position)
-                if on_screen then
-                    lock_square.Size = Vector2.new(40, 40); lock_square.Position = Vector2.new(pos.X - 20, pos.Y - 20); lock_square.Visible = true
-                else lock_square.Visible = false end
-            end
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Character.Head.Position)
+            local pos, on_screen = Camera:WorldToViewportPoint(target.Character.Head.Position)
+            if on_screen then lock_square.Size = Vector2.new(40, 40); lock_square.Position = Vector2.new(pos.X - 20, pos.Y - 20); lock_square.Visible = true
+            else lock_square.Visible = false end
         else lock_square.Visible = false end
     else lock_square.Visible = false end
 end)
 
--- AIMBOT TRADICIONAL
+-- AIMBOT
 local fov_circle = Drawing.new("Circle")
 fov_circle.Thickness = 1; fov_circle.NumSides = 64; fov_circle.Color = Color3.fromRGB(255, 255, 255); fov_circle.Transparency = 0.5; fov_circle.Filled = false; fov_circle.Visible = false
 
@@ -85,168 +87,161 @@ local function get_aim_target()
     local best, best_dist = nil, cfg.aim_fov
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        local char = player.Character
-        if not char then continue end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum or (cfg.aim_dead_check and hum.Health <= 0) then continue end
-        local part = char:FindFirstChild(cfg.aim_hitbox)
-        if not part then continue end
-        local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
-        if not on_screen then continue end
-        local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-        if dist <= best_dist then
-            if cfg.aim_visible_check then
-                local ray = Ray.new(Camera.CFrame.Position, part.Position - Camera.CFrame.Position)
-                local hit, _ = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
-                if hit and not hit:IsDescendantOf(char) then continue end
+        if player ~= LocalPlayer and is_alive(player) then
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and (not cfg.aim_dead_check or hum.Health > 0) then
+                local part = char:FindFirstChild(cfg.aim_hitbox)
+                if part then
+                    local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
+                    if on_screen then
+                        local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                        if dist <= best_dist then
+                            if cfg.aim_visible_check then
+                                local ray = Ray.new(Camera.CFrame.Position, part.Position - Camera.CFrame.Position)
+                                local hit, _ = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
+                                if not (hit and not hit:IsDescendantOf(char)) then best, best_dist = part, dist end
+                            else best, best_dist = part, dist end
+                        end
+                    end
+                end
             end
-            best, best_dist = part, dist
         end
     end
     return best
 end
 
 RunService.RenderStepped:Connect(function()
-    if cfg.show_fov then
-        fov_circle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2); fov_circle.Radius = cfg.aim_fov; fov_circle.Visible = true
+    if cfg.show_fov then fov_circle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2); fov_circle.Radius = cfg.aim_fov; fov_circle.Visible = true
     else fov_circle.Visible = false end
 
-    if cfg.aim_enabled then
-        local is_holding = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-        if (cfg.aim_hold_rmb and is_holding) or (not cfg.aim_hold_rmb) then
-            local target = get_aim_target()
-            if target then
-                local goal = CFrame.lookAt(Camera.CFrame.Position, target.Position)
-                if cfg.aim_smoothness > 1 then Camera.CFrame = Camera.CFrame:Lerp(goal, 1 / cfg.aim_smoothness)
-                else Camera.CFrame = goal end
-            end
+    if cfg.aim_enabled and (not cfg.aim_hold_rmb or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) then
+        local target = get_aim_target()
+        if target then
+            local goal = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+            Camera.CFrame = cfg.aim_smoothness > 1 and Camera.CFrame:Lerp(goal, 1 / cfg.aim_smoothness) or goal
         end
     end
 end)
 
--- ESP JOGADORES
-local esp_objects, esp_chams = {}, {}
+-- ESP SISTEMA
+local esp_objects, esp_chams, esp_doors, door_chams = {}, {}, {}, {}
+
+local function remove_player_esp(plr)
+    if esp_objects[plr] then
+        for _, v in pairs(esp_objects[plr]) do if typeof(v)=="table" then for _,l in ipairs(v) do l:Remove() end else v:Remove() end end
+        esp_objects[plr] = nil
+    end
+    if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr] = nil end
+end
+Players.PlayerRemoving:Connect(remove_player_esp)
+
 local function create_esp(plr)
     if plr == LocalPlayer or esp_objects[plr] then return end
     local obj = {}
-    obj.name = Drawing.new("Text"); obj.name.Size=16; obj.name.Center=true; obj.name.Outline=true; obj.name.Color=Color3.fromRGB(255,255,255); obj.name.Visible=false
-    obj.distance = Drawing.new("Text"); obj.distance.Size=14; obj.distance.Center=true; obj.distance.Outline=true; obj.distance.Color=Color3.fromRGB(255,255,0); obj.distance.Visible=false
-    obj.box = Drawing.new("Square"); obj.box.Thickness=1; obj.box.Color=Color3.fromRGB(255,255,255); obj.box.Transparency=1; obj.box.Filled=false; obj.box.Visible=false
-    obj.hp_bg = Drawing.new("Square"); obj.hp_bg.Color=Color3.fromRGB(0,0,0); obj.hp_bg.Filled=true; obj.hp_bg.Visible=false
-    obj.hp_fill = Drawing.new("Square"); obj.hp_fill.Color=Color3.fromRGB(0,255,0); obj.hp_fill.Filled=true; obj.hp_fill.Visible=false
-    obj.line = Drawing.new("Line"); obj.line.Thickness=1; obj.line.Color=Color3.fromRGB(255,255,255); obj.line.Transparency=0.5; obj.line.Visible=false
+    obj.name = Drawing.new("Text"); obj.name.Size=16; obj.name.Center=true; obj.name.Outline=true; obj.name.Visible=false
+    obj.distance = Drawing.new("Text"); obj.distance.Size=14; obj.distance.Center=true; obj.distance.Outline=true; obj.distance.Visible=false
+    obj.box = Drawing.new("Square"); obj.box.Thickness=1; obj.box.Transparency=1; obj.box.Filled=false; obj.box.Visible=false
+    obj.hp_bg = Drawing.new("Square"); obj.hp_bg.Filled=true; obj.hp_bg.Visible=false
+    obj.hp_fill = Drawing.new("Square"); obj.hp_fill.Filled=true; obj.hp_fill.Visible=false
+    obj.line = Drawing.new("Line"); obj.line.Thickness=1; obj.line.Transparency=0.5; obj.line.Visible=false
     obj.skeleton = {}
-    for i=1,20 do obj.skeleton[i] = Drawing.new("Line"); obj.skeleton[i].Thickness=1; obj.skeleton[i].Color=Color3.fromRGB(255,255,255); obj.skeleton[i].Transparency=1; obj.skeleton[i].Visible=false end
+    for i=1,20 do obj.skeleton[i] = Drawing.new("Line"); obj.skeleton[i].Thickness=1; obj.skeleton[i].Visible=false end
     esp_objects[plr] = obj
-end
-
-local function apply_chams(plr, state)
-    if plr == LocalPlayer then return end
-    if state then
-        if not esp_chams[plr] and plr.Character then
-            local h = Instance.new("Highlight"); h.Name="NyxiumChams"; h.FillColor=Color3.fromRGB(255,255,255); h.OutlineColor=Color3.fromRGB(255,255,255); h.FillTransparency=0.5; h.OutlineTransparency=0; h.Adornee=plr.Character; h.Parent=CoreGui
-            esp_chams[plr] = h
-        end
-    else
-        if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr]=nil end
-    end
 end
 
 local skel_r15 = {{"Head","UpperTorso"},{"UpperTorso","LowerTorso"},{"LowerTorso","HumanoidRootPart"},{"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},{"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},{"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},{"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"}}
 local skel_r6 = {{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
 
--- ESP PORTAS HALLOWEEN
-local esp_doors = {}
-
 local function start_esp()
     RunService.RenderStepped:Connect(function()
-        -- ESP Jogadores
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr == LocalPlayer then continue end
             if not cfg.esp_enabled or not is_alive(plr) then
-                if esp_objects[plr] then
-                    for _, v in pairs(esp_objects[plr]) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end
-                end
-                apply_chams(plr, false) continue
+                if esp_objects[plr] then for _, v in pairs(esp_objects[plr]) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end end
+                if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr]=nil end
+                continue
             end
             if not esp_objects[plr] then create_esp(plr) end
             local obj, char = esp_objects[plr], plr.Character
             local hrp, head, hum = char and char:FindFirstChild("HumanoidRootPart"), char and char:FindFirstChild("Head"), char and char:FindFirstChildOfClass("Humanoid")
-            if not hrp or not head or not hum then
-                for _, v in pairs(obj) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end
-                apply_chams(plr, false) continue
-            end
-            local head_pos, on_screen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-            local foot_pos, _ = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.5, 0))
-            if not on_screen then
-                for _, v in pairs(obj) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end
-                apply_chams(plr, false) continue
-            end
-            apply_chams(plr, cfg.esp_chams)
-            local dist = (get_hrp().Position - hrp.Position).Magnitude
-            local height = math.abs(head_pos.Y - foot_pos.Y)
-            local width = height * 0.6
-            local top_left = Vector2.new(head_pos.X - width / 2, head_pos.Y)
-            
-            obj.box.Size = Vector2.new(width, height); obj.box.Position = top_left; obj.box.Visible = cfg.esp_box
-            if cfg.esp_health_bar then
-                local hp_ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                local bar_x = top_left.X - 6
-                obj.hp_bg.Size = Vector2.new(3, height); obj.hp_bg.Position = Vector2.new(bar_x, top_left.Y); obj.hp_bg.Visible = true
-                obj.hp_fill.Size = Vector2.new(3, height * hp_ratio); obj.hp_fill.Position = Vector2.new(bar_x, top_left.Y + (height * (1 - hp_ratio))); obj.hp_fill.Color = Color3.fromRGB(math.floor(255*(1-hp_ratio)), math.floor(255*hp_ratio), 0); obj.hp_fill.Visible = true
-            else obj.hp_bg.Visible = false; obj.hp_fill.Visible = false end
-            
-            obj.name.Text = plr.Name; obj.name.Position = Vector2.new(head_pos.X, top_left.Y - 20); obj.name.Visible = cfg.esp_name
-            obj.distance.Text = string.format("[%d m]", math.floor(dist)); obj.distance.Position = Vector2.new(head_pos.X, top_left.Y + height + 5); obj.distance.Visible = cfg.esp_distance
-            obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); obj.line.To = Vector2.new(head_pos.X, head_pos.Y); obj.line.Visible = cfg.esp_lines
-            
-            if cfg.esp_skeleton then
-                local skel = char:FindFirstChild("UpperTorso") and skel_r15 or skel_r6
-                local i = 1
-                for _, conn in ipairs(skel) do
-                    local p1, p2 = char:FindFirstChild(conn[1]), char:FindFirstChild(conn[2])
-                    if p1 and p2 and p1:IsA("BasePart") and p2:IsA("BasePart") then
-                        local s1, o1 = Camera:WorldToViewportPoint(p1.Position); local s2, o2 = Camera:WorldToViewportPoint(p2.Position)
-                        if o1 and o2 and i <= #obj.skeleton then obj.skeleton[i].From = Vector2.new(s1.X, s1.Y); obj.skeleton[i].To = Vector2.new(s2.X, s2.Y); obj.skeleton[i].Visible = true; i = i + 1 end
+            if hrp and head and hum then
+                local head_pos, on_screen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local foot_pos, _ = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.5, 0))
+                if on_screen then
+                    if cfg.esp_chams and not esp_chams[plr] then
+                        local h = Instance.new("Highlight"); h.FillColor=Color3.fromRGB(255,255,255); h.OutlineColor=Color3.fromRGB(255,255,255); h.Adornee=char; h.Parent=CoreGui; esp_chams[plr]=h
                     end
+                    local dist = (get_hrp().Position - hrp.Position).Magnitude
+                    local height = math.abs(head_pos.Y - foot_pos.Y)
+                    local width = height * 0.6
+                    local top_left = Vector2.new(head_pos.X - width / 2, head_pos.Y)
+                    
+                    obj.box.Size = Vector2.new(width, height); obj.box.Position = top_left; obj.box.Visible = cfg.esp_box; obj.box.Color = Color3.fromRGB(255, 255, 255)
+                    if cfg.esp_health_bar then
+                        local hp_ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                        obj.hp_bg.Size = Vector2.new(3, height); obj.hp_bg.Position = Vector2.new(top_left.X - 6, top_left.Y); obj.hp_bg.Visible = true; obj.hp_bg.Color = Color3.fromRGB(0,0,0)
+                        obj.hp_fill.Size = Vector2.new(3, height * hp_ratio); obj.hp_fill.Position = Vector2.new(top_left.X - 6, top_left.Y + (height * (1 - hp_ratio))); obj.hp_fill.Color = Color3.fromRGB(0, 255, 0); obj.hp_fill.Visible = true
+                    else obj.hp_bg.Visible = false; obj.hp_fill.Visible = false end
+                    
+                    obj.name.Text = plr.Name; obj.name.Position = Vector2.new(head_pos.X, top_left.Y - 20); obj.name.Visible = cfg.esp_name; obj.name.Color = Color3.fromRGB(255,255,255)
+                    obj.distance.Text = string.format("[%d m]", math.floor(dist)); obj.distance.Position = Vector2.new(head_pos.X, top_left.Y + height + 5); obj.distance.Visible = cfg.esp_distance; obj.distance.Color = Color3.fromRGB(255,255,0)
+                    obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); obj.line.To = Vector2.new(head_pos.X, head_pos.Y); obj.line.Visible = cfg.esp_lines; obj.line.Color = Color3.fromRGB(255,255,255)
+                    
+                    if cfg.esp_skeleton then
+                        local skel = char:FindFirstChild("UpperTorso") and skel_r15 or skel_r6
+                        local i = 1
+                        for _, conn in ipairs(skel) do
+                            local p1, p2 = char:FindFirstChild(conn[1]), char:FindFirstChild(conn[2])
+                            if p1 and p2 and p1:IsA("BasePart") and p2:IsA("BasePart") then
+                                local s1, o1 = Camera:WorldToViewportPoint(p1.Position); local s2, o2 = Camera:WorldToViewportPoint(p2.Position)
+                                if o1 and o2 and i <= #obj.skeleton then obj.skeleton[i].From = Vector2.new(s1.X, s1.Y); obj.skeleton[i].To = Vector2.new(s2.X, s2.Y); obj.skeleton[i].Visible = true; obj.skeleton[i].Color = Color3.fromRGB(255,255,255); i = i + 1 end
+                            end
+                        end
+                        for j = i, #obj.skeleton do obj.skeleton[j].Visible = false end
+                    else for _, line in ipairs(obj.skeleton) do line.Visible = false end end
+                else
+                    for _, v in pairs(obj) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end
+                    if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr]=nil end
                 end
-                for j = i, #obj.skeleton do obj.skeleton[j].Visible = false end
-            else for _, line in ipairs(obj.skeleton) do line.Visible = false end end
+            end
         end
 
-        -- ESP PORTAS HALLOWEEN
         if cfg.esp_door then
-            for _, door in ipairs(Workspace:GetDescendants()) do
-                if door.Name == "HalloweenDoor" and door:IsA("Model") or (door:IsA("BasePart") and door.Name == "HalloweenDoor") then
+            for _, door in ipairs(cached_doors) do
+                if door and door:IsDescendantOf(Workspace) then
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
                         local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
-                        if on_screen then
-                            if not esp_doors[door] then
-                                esp_doors[door] = Drawing.new("Text")
-                                esp_doors[door].Size = 14
-                                esp_doors[door].Center = true
-                                esp_doors[door].Outline = true
-                                esp_doors[door].Color = Color3.fromRGB(255, 165, 0)
-                            end
-                            esp_doors[door].Text = "Halloween Door"
-                            esp_doors[door].Position = Vector2.new(pos.X, pos.Y)
-                            esp_doors[door].Visible = true
-                        else
-                            if esp_doors[door] then esp_doors[door].Visible = false end
+                        if not esp_doors[door] then
+                            esp_doors[door] = Drawing.new("Text"); esp_doors[door].Size = 14; esp_doors[door].Center = true; esp_doors[door].Outline = true; esp_doors[door].Color = Color3.fromRGB(255, 165, 0); esp_doors[door].Text = "Halloween Door"
+                        end
+                        if on_screen then esp_doors[door].Position = Vector2.new(pos.X, pos.Y); esp_doors[door].Visible = true
+                        else esp_doors[door].Visible = false end
+
+                        if not door_chams[door] then
+                            local h = Instance.new("Highlight"); h.FillColor=Color3.fromRGB(255, 165, 0); h.OutlineColor=Color3.fromRGB(255, 165, 0); h.Adornee=door; h.Parent=CoreGui; door_chams[door]=h
                         end
                     end
                 end
             end
         else
-            for _, txt in pairs(esp_doors) do txt.Visible = false end
+            for door, txt in pairs(esp_doors) do txt:Remove(); esp_doors[door] = nil; if door_chams[door] then door_chams[door]:Destroy(); door_chams[door]=nil end end
+        end
+        
+        for door, txt in pairs(esp_doors) do
+            if not door or not door:IsDescendantOf(Workspace) then
+                txt:Remove(); esp_doors[door] = nil
+                if door_chams[door] then door_chams[door]:Destroy(); door_chams[door] = nil end
+            end
         end
     end)
 end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
+local TweenService = game:GetService("TweenService")
+
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -330,7 +325,7 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (TELEPORTE DIRETO)
+-- AUTO FARM PUMPKIN (TWEEN RÁPIDO)
 local farm_state = "IDLE"
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -380,9 +375,11 @@ local function start_auto_farm()
                 local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
                 if not target_hrp then return end
                 
-                -- Teleporte Direto (Revertido para funcionar)
-                my_hrp.CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)
-                task.wait(0.1)
+                -- TWEEN RÁPIDO PARA NÃO TOMAR PUXÃO DO ANTICHEAT
+                hum.PlatformStand = true
+                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.2, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
+                tween:Play(); tween.Completed:Wait()
+                hum.PlatformStand = false
                 
                 farm_state = "ATTACKING"
                 local end_time = tick() + 2
@@ -393,44 +390,55 @@ local function start_auto_farm()
                     task.wait(0.1)
                 end
             end)
-            if not success then warn("AutoFarm erro: ", err) end
             farm_state = "IDLE"
         end)
     end)
 end
 
--- AUTO OPEN DOOR
+-- AUTO OPEN DOOR (CHECAGEM DE TIMER)
 local door_opening = false
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function()
         if not cfg.auto_open_door or door_opening then return end
         
-        local char, my_hrp = LocalPlayer.Character, get_hrp()
-        if not char or not my_hrp then return end
+        local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
+        if not char or not my_hrp or #cached_doors == 0 then return end
         
         local target_door = nil
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v.Name == "HalloweenDoor" then
-                target_door = v
-                break
+        local door_part = nil
+        
+        -- Verifica se a porta está interagível (timer acabou)
+        for _, door in ipairs(cached_doors) do
+            if door and door:IsDescendantOf(Workspace) then
+                local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
+                local prompt = door:FindFirstChildOfClass("ProximityPrompt") or (part and part:FindFirstChildOfClass("ProximityPrompt"))
+                
+                -- Se o prompt existe e está habilitado, o timer acabou
+                if prompt and prompt.Enabled then
+                    target_door = door
+                    door_part = part
+                    break
+                end
             end
         end
         
-        if target_door then
+        if target_door and door_part then
             door_opening = true
             task.spawn(function()
-                local part = target_door:IsA("Model") and (target_door.PrimaryPart or target_door:FindFirstChildWhichIsA("BasePart")) or target_door
-                if part then
-                    local my_hrp = get_hrp()
-                    if my_hrp then
-                        my_hrp.CFrame = part.CFrame * CFrame.new(0, 3, 3)
-                        task.wait(0.5)
-                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                        task.wait(0.5)
-                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        task.wait(1)
-                    end
-                end
+                -- TWEEN RÁPIDO ATÉ A PORTA
+                hum.PlatformStand = true
+                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.2, Enum.EasingStyle.Linear), {CFrame = door_part.CFrame * CFrame.new(0, 3, 3)})
+                tween:Play(); tween.Completed:Wait()
+                hum.PlatformStand = false
+                
+                task.wait(0.5)
+                
+                -- SEGURA O E POR 5.5 SEGUNDOS
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                task.wait(5.5) 
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                
+                task.wait(1)
                 door_opening = false
             end)
         end
@@ -487,8 +495,8 @@ local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
-FarmTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door", Desc = "TP e segura E", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Apenas liberadas)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
