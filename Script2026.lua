@@ -32,10 +32,10 @@ local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.Characte
 local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
 
--- CACHE DE PORTAS
+-- CACHE DE PORTAS OTIMIZADO
 local cached_doors = {}
 task.spawn(function()
-    while task.wait(3) do
+    while task.wait(2) do
         local temp = {}
         for _, v in ipairs(Workspace:GetDescendants()) do
             if v.Name == "HalloweenDoor" then table.insert(temp, v) end
@@ -240,8 +240,6 @@ end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
-local TweenService = game:GetService("TweenService")
-
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -325,7 +323,7 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (TWEEN RÁPIDO)
+-- AUTO FARM PUMPKIN (TP DIRETO)
 local farm_state = "IDLE"
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -371,76 +369,79 @@ local function start_auto_farm()
 
         farm_state = "MOVING"
         task.spawn(function()
-            local success, err = pcall(function()
-                local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-                if not target_hrp then return end
-                
-                -- TWEEN RÁPIDO PARA NÃO TOMAR PUXÃO DO ANTICHEAT
-                hum.PlatformStand = true
-                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.2, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
-                tween:Play(); tween.Completed:Wait()
-                hum.PlatformStand = false
-                
-                farm_state = "ATTACKING"
-                local end_time = tick() + 2
-                while tick() < end_time and cfg.auto_farm_pumpkin do
-                    if not target.Character then break end
-                    pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                    task.wait(0.1)
-                end
-            end)
+            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if not target_hrp then farm_state = "IDLE" return end
+            
+            -- TELEPORTE DIRETO E RÁPIDO
+            my_hrp.CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)
+            task.wait(0.1)
+            
+            farm_state = "ATTACKING"
+            local end_time = tick() + 2
+            while tick() < end_time and cfg.auto_farm_pumpkin do
+                if not target.Character then break end
+                pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                task.wait(0.1)
+            end
             farm_state = "IDLE"
         end)
     end)
 end
 
--- AUTO OPEN DOOR (CHECAGEM DE TIMER)
+-- AUTO OPEN DOOR (LÓGICA DE ESPERA E VERIFICAÇÃO)
 local door_opening = false
 local function start_auto_open_door()
-    RunService.Heartbeat:Connect(function()
-        if not cfg.auto_open_door or door_opening then return end
-        
-        local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
-        if not char or not my_hrp or #cached_doors == 0 then return end
-        
-        local target_door = nil
-        local door_part = nil
-        
-        -- Verifica se a porta está interagível (timer acabou)
-        for _, door in ipairs(cached_doors) do
-            if door and door:IsDescendantOf(Workspace) then
-                local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
-                local prompt = door:FindFirstChildOfClass("ProximityPrompt") or (part and part:FindFirstChildOfClass("ProximityPrompt"))
-                
-                -- Se o prompt existe e está habilitado, o timer acabou
-                if prompt and prompt.Enabled then
-                    target_door = door
-                    door_part = part
-                    break
+    task.spawn(function()
+        while task.wait(1) do
+            if not cfg.auto_open_door or door_opening then continue end
+            
+            local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
+            if not char or not my_hrp or #cached_doors == 0 then continue end
+            
+            -- Acha a porta mais próxima
+            local closest_door, min_dist = nil, math.huge
+            local door_part = nil
+            
+            for _, door in ipairs(cached_doors) do
+                if door and door:IsDescendantOf(Workspace) then
+                    local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
+                    if part then
+                        local dist = (my_hrp.Position - part.Position).Magnitude
+                        if dist < min_dist then
+                            min_dist = dist
+                            closest_door = door
+                            door_part = part
+                        end
+                    end
                 end
             end
-        end
-        
-        if target_door and door_part then
-            door_opening = true
-            task.spawn(function()
-                -- TWEEN RÁPIDO ATÉ A PORTA
+            
+            if closest_door and door_part then
+                door_opening = true
+                
+                -- Vai até a porta (TP Direto)
                 hum.PlatformStand = true
-                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.2, Enum.EasingStyle.Linear), {CFrame = door_part.CFrame * CFrame.new(0, 3, 3)})
-                tween:Play(); tween.Completed:Wait()
+                my_hrp.CFrame = door_part.CFrame * CFrame.new(0, 0, 3)
+                task.wait(0.5)
                 hum.PlatformStand = false
                 
-                task.wait(0.5)
-                
-                -- SEGURA O E POR 5.5 SEGUNDOS
+                -- Segura E por no máximo 6 segundos
                 VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                task.wait(5.5) 
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                local timeout = tick() + 6
+                local opened = false
                 
-                task.wait(1)
+                while tick() < timeout do
+                    task.wait(0.1)
+                    -- Verifica se a porta sumiu ou ficou invisível
+                    if not closest_door:IsDescendantOf(Workspace) then opened = true break end
+                    if door_part.Transparency == 1 then opened = true break end
+                end
+                
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                task.wait(0.5) -- Pequeno delay antes de ir pra próxima
                 door_opening = false
-            end)
+            end
         end
     end)
 end
