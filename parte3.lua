@@ -1,12 +1,13 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR COM RESET FORÇADO)
+-- NYXIUM HUB - ITADORI (PARTE 3)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
 local door_interact_time = 0
 local is_holding_e = false
-local fly_target_y = nil
+local door_bp = nil
+local door_target_y = nil
 local wait_start = 0
 
 local function check_if_locked(door)
@@ -29,13 +30,27 @@ local function check_if_locked(door)
     return false
 end
 
--- RESET TOTAL DO PERSONAGEM
+local function remove_door_bp()
+    if door_bp then door_bp:Destroy(); door_bp = nil end
+end
+
+local function create_door_bp(hrp, y)
+    if door_bp then door_bp:Destroy() end
+    hrp.CanCollide = true
+    door_bp = Instance.new("BodyPosition")
+    door_bp.MaxForce = Vector3.new(0, 1000000, 0)
+    door_bp.P = 100000
+    door_bp.D = 5000
+    door_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
+    door_bp.Parent = hrp
+end
+
 local function reset_character()
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if hrp then hrp.Anchored = false end
+    if hrp then hrp.Anchored = false; hrp.CanCollide = true end
     if hum then
         hum.PlatformStand = false
         hum.WalkSpeed = 16
@@ -46,37 +61,6 @@ local function reset_character()
     end
 end
 
--- Se o fly_bypass for ativado, desliga o Auto Door
-task.spawn(function()
-    while task.wait(0.2) do
-        if cfg.fly_bypass and cfg.auto_open_door then
-            cfg.auto_open_door = false
-            door_state = "SUBINDO_INICIAL"
-            reset_character()
-        end
-    end
-end)
-
--- Loop de ancoragem forçada
-task.spawn(function()
-    while task.wait(0.05) do
-        if cfg.auto_open_door then
-            local hrp = get_hrp()
-            if hrp then
-                local is_flying = (door_state == "SUBINDO_INICIAL" or door_state == "PROCURANDO" or door_state == "VOANDO" or door_state == "ESPERANDO" or door_state == "DESCENDO")
-                if is_flying then
-                    hrp.Anchored = true
-                    local hum = get_hum()
-                    if hum then
-                        hum.PlatformStand = true
-                        hum.WalkSpeed = 0
-                    end
-                end
-            end
-        end
-    end
-end)
-
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
@@ -86,8 +70,9 @@ local function start_auto_open_door()
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
+                remove_door_bp()
                 reset_character()
-                fly_target_y = nil
+                door_target_y = nil
             end
             return
         end
@@ -101,20 +86,21 @@ local function start_auto_open_door()
         if #cached_doors == 0 then return end
 
         if door_state == "SUBINDO_INICIAL" then
-            if not fly_target_y then
-                fly_target_y = hrp.Position.Y + 300
+            if not door_target_y then
+                door_target_y = hrp.Position.Y + 300
+                create_door_bp(hrp, door_target_y)
             end
-            local current_y = hrp.Position.Y
-            if current_y < fly_target_y - 3 then
-                hrp.CFrame = CFrame.new(hrp.Position.X, current_y + 3, hrp.Position.Z)
-            else
-                hrp.CFrame = CFrame.new(hrp.Position.X, fly_target_y, hrp.Position.Z)
+            if door_bp then
+                door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z)
+            end
+            if math.abs(hrp.Position.Y - door_target_y) < 5 then
                 door_state = "PROCURANDO"
             end
             return
         end
 
         if door_state == "PROCURANDO" then
+            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
             local closest_door, min_dist = nil, math.huge
             local closest_part = nil
             for _, door in ipairs(cached_doors) do
@@ -137,6 +123,7 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "VOANDO"
+                door_target_y = closest_part.Position.Y + 250
             end
             return
         end
@@ -145,14 +132,12 @@ local function start_auto_open_door()
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            local target_y = target_door_part.Position.Y + 250
-            local target_xz = Vector3.new(target_door_part.Position.X, target_y, target_door_part.Position.Z)
-            local dir = target_xz - hrp.Position
-            local dist = dir.Magnitude
-            if dist > 5 then
-                hrp.CFrame = CFrame.new(hrp.Position + (dir.Unit * 150 * dt))
+            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
+            local target_xz = Vector3.new(target_door_part.Position.X, hrp.Position.Y, target_door_part.Position.Z)
+            local dist_xz = (hrp.Position - target_xz).Magnitude
+            if dist_xz > 5 then
+                hrp.CFrame = hrp.CFrame + ((target_xz - hrp.Position).Unit * 200 * dt)
             else
-                hrp.CFrame = CFrame.new(target_xz)
                 door_state = "ESPERANDO"
                 wait_start = tick()
             end
@@ -160,6 +145,7 @@ local function start_auto_open_door()
         end
 
         if door_state == "ESPERANDO" then
+            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
             if tick() - wait_start >= 1 then
                 door_state = "DESCENDO"
             end
@@ -170,6 +156,7 @@ local function start_auto_open_door()
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
+            remove_door_bp()
             local right_pos = target_door_part.Position + (target_door_part.CFrame.RightVector * 50)
             local target_pos = Vector3.new(right_pos.X, target_door_part.Position.Y + 2, right_pos.Z)
             local dir = target_pos - hrp.Position
@@ -178,8 +165,6 @@ local function start_auto_open_door()
                 hrp.CFrame = CFrame.new(hrp.Position + (dir.Unit * 120 * dt))
             else
                 door_state = "ANDANDO_PORTA"
-                hrp.Anchored = false
-                hum.PlatformStand = false
                 hum.WalkSpeed = 16
             end
             return
@@ -209,9 +194,6 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
-            if hum.Health <= 0 then
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
-            end
             if target_door_part then
                 hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
             end
@@ -220,11 +202,10 @@ local function start_auto_open_door()
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
-                hrp.Anchored = false
                 hum.PlatformStand = false
                 hum.WalkSpeed = 16
                 door_state = "SUBINDO_INICIAL"
-                fly_target_y = nil
+                door_target_y = nil
             end
             return
         end
