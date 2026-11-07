@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3)
+-- NYXIUM HUB - ITADORI (PARTE 3 - RESET DE INTERAÇÃO)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -9,6 +9,8 @@ local is_holding_e = false
 local door_bp = nil
 local door_target_y = nil
 local wait_start = 0
+local last_health = 100
+local interact_retry_cooldown = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -61,15 +63,21 @@ local function reset_character()
     end
 end
 
+local function reset_interaction()
+    if is_holding_e then
+        if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        is_holding_e = false
+    end
+    interact_retry_cooldown = tick() + 0.3
+end
+
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
             if door_state ~= "SUBINDO_INICIAL" then
                 door_state = "SUBINDO_INICIAL"
-                if is_holding_e then
-                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
-                end
+                reset_interaction()
                 remove_door_bp()
                 reset_character()
                 door_target_y = nil
@@ -84,6 +92,19 @@ local function start_auto_open_door()
             return
         end
         if #cached_doors == 0 then return end
+
+        -- Detectar dano: se a vida caiu, reseta a interação
+        if hum.Health < last_health then
+            last_health = hum.Health
+            if door_state == "OPENING" then
+                reset_interaction()
+                door_state = "ANDANDO_PORTA"
+                door_interact_time = 0
+                return
+            end
+        else
+            last_health = hum.Health
+        end
 
         if door_state == "SUBINDO_INICIAL" then
             if not door_target_y then
@@ -144,9 +165,10 @@ local function start_auto_open_door()
             return
         end
 
+        -- 0.5 SEGUNDO DE ESPERA
         if door_state == "ESPERANDO" then
             if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
-            if tick() - wait_start >= 1 then
+            if tick() - wait_start >= 0.5 then
                 door_state = "DESCENDO"
             end
             return
@@ -171,6 +193,7 @@ local function start_auto_open_door()
         end
 
         if door_state == "ANDANDO_PORTA" then
+            if tick() < interact_retry_cooldown then return end
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
@@ -197,11 +220,14 @@ local function start_auto_open_door()
             if target_door_part then
                 hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
             end
-            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
-                if is_holding_e then
-                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
-                end
+            -- Se passar 6s sem abrir, reseta e tenta de novo
+            if tick() - door_interact_time > 6 then
+                reset_interaction()
+                door_state = "ANDANDO_PORTA"
+                return
+            end
+            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) then
+                reset_interaction()
                 hum.PlatformStand = false
                 hum.WalkSpeed = 16
                 door_state = "SUBINDO_INICIAL"
