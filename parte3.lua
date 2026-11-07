@@ -1,14 +1,12 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - RESET DE INTERAÇÃO)
+-- NYXIUM HUB - ITADORI (PARTE 3 - DOOR NO CHÃO)
 -- ============================================================
-local door_state = "SUBINDO_INICIAL"
+local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
 local door_interact_time = 0
 local is_holding_e = false
-local door_bp = nil
-local door_target_y = nil
-local wait_start = 0
+local door_walk_timer = 0
 local last_health = 100
 
 local function check_if_locked(door)
@@ -31,21 +29,6 @@ local function check_if_locked(door)
     return false
 end
 
-local function remove_door_bp()
-    if door_bp then door_bp:Destroy(); door_bp = nil end
-end
-
-local function create_door_bp(hrp, y)
-    if door_bp then door_bp:Destroy() end
-    hrp.CanCollide = true
-    door_bp = Instance.new("BodyPosition")
-    door_bp.MaxForce = Vector3.new(0, 1000000, 0)
-    door_bp.P = 100000
-    door_bp.D = 5000
-    door_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
-    door_bp.Parent = hrp
-end
-
 local function reset_character()
     local char = LocalPlayer.Character
     if not char then return end
@@ -62,23 +45,30 @@ local function reset_character()
     end
 end
 
-local function reset_interaction()
-    if is_holding_e then
-        if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-        is_holding_e = false
+local function nav_dir(start_pos, target_pos, char, door_model)
+    door_walk_timer = door_walk_timer + 0.01
+    if door_walk_timer > 2.5 then return Vector3.new(0, 1, 0) end
+    local base_dir = (target_pos - start_pos).Unit
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, door_model}
+    params.IgnoreWater = true
+    local angles = {0, 20, -20, 40, -40, 60, -60}
+    for _, ang in ipairs(angles) do
+        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
+        local hit = Workspace:Raycast(start_pos, rot * 15, params)
+        if not hit then return rot end
     end
+    return base_dir
 end
 
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
-            if door_state ~= "SUBINDO_INICIAL" then
-                door_state = "SUBINDO_INICIAL"
-                reset_interaction()
-                remove_door_bp()
+            if door_state ~= "IDLE" then
+                door_state = "IDLE"
                 reset_character()
-                door_target_y = nil
+                target_prompt = nil
             end
             return
         end
@@ -93,28 +83,12 @@ local function start_auto_open_door()
 
         if hum.Health < last_health and door_state == "OPENING" then
             last_health = hum.Health
-            reset_interaction()
-            door_state = "ANDANDO_PORTA"
+            door_state = "WALKING"
             return
         end
         last_health = hum.Health
 
-        if door_state == "SUBINDO_INICIAL" then
-            if not door_target_y then
-                door_target_y = hrp.Position.Y + 300
-                create_door_bp(hrp, door_target_y)
-            end
-            if door_bp then
-                door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z)
-            end
-            if math.abs(hrp.Position.Y - door_target_y) < 5 then
-                door_state = "PROCURANDO"
-            end
-            return
-        end
-
-        if door_state == "PROCURANDO" then
-            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
+        if door_state == "IDLE" then
             local closest_door, min_dist = nil, math.huge
             local closest_part = nil
             for _, door in ipairs(cached_doors) do
@@ -136,94 +110,53 @@ local function start_auto_open_door()
             if closest_door and closest_part then
                 target_door_model = closest_door
                 target_door_part = closest_part
-                door_state = "VOANDO"
-                door_target_y = closest_part.Position.Y + 250
+                door_state = "WALKING"
+                door_walk_timer = 0
             end
             return
         end
 
-        if door_state == "VOANDO" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
-                door_state = "PROCURANDO" return
-            end
-            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
-            local target_xz = Vector3.new(target_door_part.Position.X, hrp.Position.Y, target_door_part.Position.Z)
-            local dist_xz = (hrp.Position - target_xz).Magnitude
-            if dist_xz > 5 then
-                hrp.CFrame = hrp.CFrame + ((target_xz - hrp.Position).Unit * 200 * dt)
-            else
-                door_state = "ESPERANDO"
-                wait_start = tick()
-            end
-            return
-        end
-
-        if door_state == "ESPERANDO" then
-            if door_bp then door_bp.Position = Vector3.new(hrp.Position.X, door_target_y, hrp.Position.Z) end
-            if tick() - wait_start >= 0.5 then
-                door_state = "DESCENDO"
-            end
-            return
-        end
-
-        if door_state == "DESCENDO" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
-                door_state = "PROCURANDO" return
-            end
-            remove_door_bp()
-            local right_pos = target_door_part.Position + (target_door_part.CFrame.RightVector * 50)
-            local target_pos = Vector3.new(right_pos.X, target_door_part.Position.Y + 2, right_pos.Z)
-            local dir = target_pos - hrp.Position
-            local dist = dir.Magnitude
-            if dist > 3 then
-                hrp.CFrame = CFrame.new(hrp.Position + (dir.Unit * 120 * dt))
-            else
-                door_state = "ANDANDO_PORTA"
-                hum.WalkSpeed = 16
-            end
-            return
-        end
-
-        if door_state == "ANDANDO_PORTA" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
-                door_state = "PROCURANDO" return
+        if door_state == "WALKING" then
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then
+                door_state = "IDLE" return
             end
             local target_pos = target_door_part.Position
             if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then
                 target_pos = target_prompt.Parent.Position
             end
             local dist = (hrp.Position - target_pos).Magnitude
-            if dist > 3 then
-                hrp.CFrame = hrp.CFrame + ((target_pos - hrp.Position).Unit * 80 * dt)
+            if dist > 4 then
+                local move_dir = nav_dir(hrp.Position, target_pos, char, target_door_model)
+                -- Speed bypass de 60 studs
+                hrp.CFrame = hrp.CFrame + (move_dir * 60 * dt)
             else
                 door_state = "OPENING"
                 door_interact_time = tick()
-                if not is_holding_e then
-                    if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    is_holding_e = true
-                end
             end
             return
         end
 
         if door_state == "OPENING" then
-            if target_door_part then
-                hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
-            end
+            -- INTERAÇÃO INSTANTÂNEA: aperta E 1 vez, se não abrir tenta de novo
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) then
-                reset_interaction()
-                hum.PlatformStand = false
-                hum.WalkSpeed = 16
-                door_state = "SUBINDO_INICIAL"
-                door_target_y = nil
+                reset_character()
+                door_state = "IDLE"
+                target_prompt = nil
                 return
             end
-            if tick() - door_interact_time > 6 then
-                reset_interaction()
-                door_state = "ANDANDO_PORTA"
-                door_interact_time = 0
-                return
+            -- Aperta E a cada 0.5s até a porta abrir
+            if tick() - door_interact_time > 0.5 then
+                door_interact_time = tick()
+                pcall(function()
+                    if target_prompt then
+                        target_prompt:InputHoldBegin()
+                        task.wait(0.05)
+                        target_prompt:InputHoldEnd()
+                    end
+                end)
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
             end
             return
         end
