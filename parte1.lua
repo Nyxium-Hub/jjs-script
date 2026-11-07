@@ -230,5 +230,5 @@ local function start_esp()
                 if door_chams[door] then door_chams[door]:Destroy(); door_chams[door] = nil end
             end
         end
-   end)
+    end)
 end
