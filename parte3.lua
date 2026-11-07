@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - DOOR CFrame SUAVE)
+-- NYXIUM HUB - ITADORI (PARTE 3)
 -- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
@@ -70,7 +70,7 @@ end
 
 local function smart_nav(start_pos, target_pos, char, door_model)
     door_walk_timer = door_walk_timer + 0.016
-    if door_walk_timer > 2.5 then return Vector3.new(0, 0.5, 0).Unit end
+    if door_walk_timer > 2.5 then return Vector3.new(0, 1, 0) end
     local base_dir = (target_pos - start_pos).Unit
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
@@ -144,9 +144,7 @@ local function start_auto_open_door()
 
         if door_state == "WALKING" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then
-                door_state = "IDLE" 
-                hum.PlatformStand = false
-                return
+                door_state = "IDLE" return
             end
             local target_pos = target_door_part.Position
             if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then
@@ -154,11 +152,9 @@ local function start_auto_open_door()
             end
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 4 then
-                hum.PlatformStand = true
                 local move_dir = smart_nav(hrp.Position, target_pos, char, target_door_model)
-                hrp.CFrame = CFrame.lookAt(hrp.Position + (move_dir * door_speed * dt), hrp.Position + move_dir)
+                hrp.CFrame = hrp.CFrame + (move_dir * door_speed * dt)
             else
-                hum.PlatformStand = false
                 door_state = "OPENING"
                 door_interact_time = tick()
             end
@@ -166,7 +162,6 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
-            hum.PlatformStand = false
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) then
                 reset_character()
                 door_state = "IDLE"
