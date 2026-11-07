@@ -31,7 +31,6 @@ local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.Characte
 local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
 
--- CACHE DE PORTAS
 local cached_doors = {}
 task.spawn(function()
     while task.wait(2) do
@@ -43,7 +42,6 @@ task.spawn(function()
     end
 end)
 
--- CONSOLE LOCK ON
 local lock_square = Drawing.new("Square")
 lock_square.Thickness = 2; lock_square.Color = Color3.fromRGB(255, 0, 0); lock_square.Transparency = 1; lock_square.Filled = false; lock_square.Visible = false
 
@@ -78,7 +76,6 @@ RunService.RenderStepped:Connect(function()
     else lock_square.Visible = false end
 end)
 
--- AIMBOT
 local fov_circle = Drawing.new("Circle")
 fov_circle.Thickness = 1; fov_circle.NumSides = 64; fov_circle.Color = Color3.fromRGB(255, 255, 255); fov_circle.Transparency = 0.5; fov_circle.Filled = false; fov_circle.Visible = false
 
@@ -123,7 +120,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ESP SISTEMA
 local esp_objects, esp_chams, esp_doors, door_chams = {}, {}, {}, {}
 
 local function remove_player_esp(plr)
@@ -246,7 +242,6 @@ local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
 local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
 
--- AUTO REGEN (APERTA R QUANDO MORRE)
 local is_regenerating = false
 task.spawn(function()
     while task.wait(0.1) do
@@ -269,7 +264,6 @@ task.spawn(function()
     end
 end)
 
--- AUTO BLOCK
 local is_blocking = false
 local function update_auto_block()
     if not cfg.auto_block then
@@ -307,7 +301,6 @@ local function update_auto_block()
     end
 end
 
--- MOVIMENTAÇÃO
 local fly_vel = nil
 local function update_player_movement(dt)
     local char = LocalPlayer.Character
@@ -349,7 +342,6 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN
 local farm_state = "IDLE"
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -425,9 +417,7 @@ local hover_hrp = nil
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if prompt then
-        return not prompt.Enabled
-    end
+    if prompt then return not prompt.Enabled end
     local frame = door:FindFirstChild("Frame")
     if frame then
         local children = frame:GetChildren()
@@ -452,12 +442,37 @@ local function remove_hover()
     hover_hrp = nil
 end
 
+-- RAYCAST INTELIGENTE (Contorna paredes lendo 20 studs em volta)
+local function get_navigation_dir(start_pos, target_pos, char, door_model)
+    local base_dir = (target_pos - start_pos).Unit
+    local ray_params = RaycastParams.new()
+    ray_params.FilterType = Enum.RaycastFilterType.Exclude
+    ray_params.FilterDescendantsInstances = {char, door_model}
+    ray_params.IgnoreWater = true
+    
+    -- Testa o caminho reto primeiro, depois ângulos pro lado
+    local angles = {0, 20, -20, 45, -45, 70, -70, 90, -90}
+    for _, angle in ipairs(angles) do
+        local rotated_dir = (CFrame.Angles(0, math.rad(angle), 0) * base_dir)
+        local hit = Workspace:Raycast(start_pos, rotated_dir * 20, ray_params)
+        if not hit then
+            return rotated_dir -- Achou uma brecha, vai pra lá
+        end
+    end
+    
+    -- Tudo bloqueado: sobe
+    return (base_dir + Vector3.new(0, 1, 0)).Unit
+end
+
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
             if door_state ~= "IDLE" then
                 door_state = "IDLE"
-                if is_holding_e then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false end
+                if is_holding_e then 
+                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
+                end
                 if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     LocalPlayer.Character.HumanoidRootPart.Anchored = false
                     for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end
@@ -468,10 +483,19 @@ local function start_auto_open_door()
         end
 
         local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
-        if not char or not hrp or not hum or #cached_doors == 0 then 
-            remove_hover()
-            return 
+        if not char or not hrp or not hum then remove_hover() return end
+        
+        -- REGEN EMBUTIDO: Se morrer enquanto farma, tenta reviver sozinho
+        if hum.Health <= 0 then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                task.wait(0.1)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+            end)
+            return
         end
+
+        if #cached_doors == 0 then remove_hover() return end
 
         local closest_door, min_dist = nil, math.huge
         local closest_part = nil
@@ -530,8 +554,7 @@ local function start_auto_open_door()
 
         if door_state == "WALKING" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then 
-                door_state = "IDLE" 
-                return 
+                door_state = "IDLE" return 
             end
             
             if cfg.door_noclip then
@@ -546,14 +569,21 @@ local function start_auto_open_door()
             local dist = (hrp.Position - target_pos).Magnitude
             
             if dist > 4 then
-                local move_dir = (target_pos - hrp.Position).Unit
+                -- Usa o raycast inteligente pra contornar paredes
+                local move_dir = get_navigation_dir(hrp.Position, target_pos, char, target_door_model)
                 hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
                 
+                -- Trava no lugar para o prompt não bugar
+                hrp.Anchored = true
+                hrp.CFrame = CFrame.new(target_pos + Vector3.new(0, 2, 0))
+                
+                -- Ativa o prompt via método oficial (mais seguro que teclado)
                 if not is_holding_e then
+                    if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
                     is_holding_e = true
                 end
@@ -561,17 +591,28 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
-            -- ANTI-ATAQUE: Fica flutuando e andando em círculos (strafe) na porta
-            if target_door_part then
-                local angle = tick() * 5
-                local offset = Vector3.new(math.cos(angle) * 2, 2.5, math.sin(angle) * 2)
-                hrp.CFrame = CFrame.new(target_door_part.Position + offset)
-                hum.PlatformStand = true 
+            -- Regen embutido enquanto interage
+            if hum.Health <= 0 then
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                    task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                end)
             end
-
+            
+            -- Mantém travado no lugar
+            if target_door_part then
+                hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
+            end
+            
+            -- Sai do loop após 6 segundos ou quando porta abrir/sumir
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
-                if is_holding_e then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false end
+                if is_holding_e then 
+                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
+                end
                 
+                hrp.Anchored = false
                 hum.PlatformStand = false
                 hum.WalkSpeed = 16
                 for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end
@@ -582,16 +623,12 @@ local function start_auto_open_door()
     end)
 end
 
--- LOOP INICIAL
 RunService.Heartbeat:Connect(update_auto_block)
 RunService.RenderStepped:Connect(update_player_movement)
 start_auto_farm()
 start_auto_open_door()
 start_esp()
 
--- ============================================================
--- INTERFACE WIND UI
--- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
 
@@ -639,7 +676,7 @@ FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Strafe Protection)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Raycast Inteligente)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
