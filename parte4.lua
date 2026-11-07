@@ -90,7 +90,9 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 local FarmTab = Window:Tab({ Title = "Farm Halloween", Icon = "leaf" })
 FarmTab:Section({ Title = "Halloween" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s; notify("Auto Pumpkin", s and "Ativado" or "Desativado") end })
+FarmTab:Slider({ Title = "Pumpkin Speed", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) if set_farm_speed then set_farm_speed(v) end end })
 FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s; notify("Auto Door", s and "Ativado" or "Desativado") end })
+FarmTab:Slider({ Title = "Door Speed", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) if set_door_speed then set_door_speed(v) end end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "Halloween Door ESP" })
