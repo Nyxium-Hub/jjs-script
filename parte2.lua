@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FARM CFrame SUAVE)
+-- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -73,38 +73,43 @@ local function update_player_movement(dt)
     local hum = get_hum()
     if not char or not hrp or not hum then return end
 
-    if cfg.auto_farm_pumpkin or cfg.auto_open_door then
-        return
-    end
+    local farming_pumpkin = cfg.auto_farm_pumpkin
+    local door_active = cfg.auto_open_door and door_state ~= "IDLE"
 
-    if cfg.speed_bypass then
+    if cfg.speed_bypass and not farming_pumpkin then
         hum.WalkSpeed = 16
         if hum.MoveDirection.Magnitude > 0 then
             hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt)
         end
-    else
+    elseif not farming_pumpkin then
         hum.WalkSpeed = 16
     end
 
-    if cfg.noclip_bypass then
+    if cfg.noclip_bypass and not farming_pumpkin and not door_active then
         for _, p in ipairs(char:GetDescendants()) do 
             if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = false end 
         end
         if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
-    else
+    elseif not farming_pumpkin and not door_active then
         for _, p in ipairs(char:GetDescendants()) do 
             if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end 
         end
     end
     hrp.CanCollide = true
 
-    if cfg.jump_power_enabled then hum.UseJumpPower = true; hum.JumpPower = cfg.jump_power_val end
+    if cfg.jump_power_enabled then 
+        hum.UseJumpPower = true
+        hum.JumpPower = cfg.jump_power_val 
+    end
 
     if cfg.fly_bypass then
         hum.PlatformStand = true
         if not fly_vel or fly_vel.Parent ~= hrp then
             if fly_vel then fly_vel:Destroy() end
-            fly_vel = Instance.new("BodyVelocity"); fly_vel.MaxForce = Vector3.new(math.huge, math.huge, math.huge); fly_vel.Velocity = Vector3.zero; fly_vel.Parent = hrp
+            fly_vel = Instance.new("BodyVelocity")
+            fly_vel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            fly_vel.Velocity = Vector3.zero
+            fly_vel.Parent = hrp
         end
         local dir = Vector3.zero
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += Camera.CFrame.LookVector end
@@ -117,17 +122,24 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
+        if hum.PlatformStand and not farming_pumpkin and not door_active then hum.PlatformStand = false end
     end
 end
 
-UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
+UserInputService.JumpRequest:Connect(function() 
+    if cfg.inf_jump then 
+        local hum = get_hum() 
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end 
+    end 
+end)
 
--- FARM PUMPKIN (CFrame direto + PlatformStand pra evitar pulo)
+-- FARM PUMPKIN COM VOO 200
 local farm_state = "IDLE"
 local farm_target = nil
 local farm_last_hit = 0
 local farm_speed = 60
-local farm_walk_timer = 0
+local farm_bp = nil
+local farm_fly_y = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -140,30 +152,34 @@ local function has_pumpkin(plr)
     return false
 end
 
-local function smart_nav(start_pos, target_pos, char, target_char)
-    farm_walk_timer = farm_walk_timer + 0.016
-    if farm_walk_timer > 2.5 then return Vector3.new(0, 0.5, 0).Unit end
-    local base_dir = (target_pos - start_pos).Unit
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {char, target_char}
-    params.IgnoreWater = true
-    local angles = {0, 15, -15, 30, -30, 45, -45, 60, -60}
-    for _, ang in ipairs(angles) do
-        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
-        local hit = Workspace:Raycast(start_pos, rot * 12, params)
-        if not hit then return rot end
-    end
-    return base_dir
+local function remove_bp()
+    if farm_bp then farm_bp:Destroy(); farm_bp = nil end
+end
+
+local function create_bp(hrp, y)
+    if farm_bp then farm_bp:Destroy() end
+    hrp.CanCollide = true
+    farm_bp = Instance.new("BodyPosition")
+    farm_bp.MaxForce = Vector3.new(0, 1000000, 0)
+    farm_bp.P = 100000
+    farm_bp.D = 5000
+    farm_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
+    farm_bp.Parent = hrp
 end
 
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
+            if farm_state ~= "IDLE" then
+                local hum = get_hum()
+                local hrp = get_hrp()
+                if hum then hum.PlatformStand = false end
+                if hrp then hrp.Anchored = false end
+                remove_bp()
+            end
             farm_state = "IDLE"
             farm_target = nil
-            local hum = get_hum()
-            if hum then hum.PlatformStand = false end
+            farm_fly_y = nil
             return
         end
 
@@ -171,9 +187,22 @@ local function start_auto_farm()
         if not char or not my_hrp or not hum then return end
 
         if has_pumpkin(LocalPlayer) then
-            farm_state = "DONE"
-            if hum.PlatformStand then hum.PlatformStand = false end
+            if farm_state ~= "FLEE" then
+                farm_state = "FLEE"
+                farm_fly_y = my_hrp.Position.Y + 300
+                create_bp(my_hrp, farm_fly_y)
+            end
+            if farm_bp and farm_fly_y then
+                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
+            end
             return
+        else
+            if farm_state == "FLEE" then
+                hum.PlatformStand = false
+                remove_bp()
+                farm_state = "IDLE"
+                farm_fly_y = nil
+            end
         end
 
         if farm_state == "IDLE" then
@@ -183,28 +212,32 @@ local function start_auto_farm()
             end
             if target then
                 farm_target = target
-                farm_state = "WALKING"
-                farm_walk_timer = 0
-                hum.PlatformStand = true
+                farm_state = "FLYING"
+                farm_fly_y = my_hrp.Position.Y + 200
+                create_bp(my_hrp, farm_fly_y)
             end
             return
         end
 
-        if farm_state == "WALKING" and farm_target then
+        if farm_state == "FLYING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then 
                 farm_state = "IDLE" 
                 farm_target = nil 
-                hum.PlatformStand = false
+                remove_bp()
                 return 
             end
-            local dist = (my_hrp.Position - target_hrp.Position).Magnitude
-            if dist > 3 then
-                hum.PlatformStand = true
-                local move_dir = smart_nav(my_hrp.Position, target_hrp.Position, char, farm_target.Character)
-                my_hrp.CFrame = CFrame.lookAt(my_hrp.Position + (move_dir * farm_speed * dt), my_hrp.Position + move_dir)
+            if farm_bp and farm_fly_y then
+                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
+            end
+            local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
+            local dist_xz = (my_hrp.Position - target_xz).Magnitude
+            if dist_xz > 6 then
+                local move_dir = (target_xz - my_hrp.Position).Unit
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * farm_speed * dt)
             else
                 farm_state = "ATTACKING"
+                remove_bp()
             end
             return
         end
@@ -214,15 +247,9 @@ local function start_auto_farm()
             if not target_hrp or not is_alive(farm_target) then 
                 farm_state = "IDLE" 
                 farm_target = nil 
-                hum.PlatformStand = false
                 return 
             end
-            local dist = (my_hrp.Position - target_hrp.Position).Magnitude
-            if dist > 3 then
-                farm_state = "WALKING"
-                return
-            end
-            hum.PlatformStand = false
+            my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
             if tick() - farm_last_hit > 0.4 then
                 farm_last_hit = tick()
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
