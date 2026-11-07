@@ -240,6 +240,7 @@ end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -323,7 +324,7 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (TP WALK)
+-- AUTO FARM PUMPKIN (TP WALK COM FLY)
 local farm_state = "IDLE"
 local farm_target = nil
 
@@ -380,7 +381,12 @@ local function start_auto_farm()
             local dist = (my_hrp.Position - target_hrp.Position).Magnitude
             if dist > 5 then
                 local move_dir = (target_hrp.Position - my_hrp.Position).Unit
-                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt) -- TP Walk rápido (150 studs/s)
+                
+                -- Voa por cima se bater em algo
+                local ray = Workspace:Raycast(my_hrp.Position, move_dir * 6, RaycastParams.new())
+                if ray then move_dir = Vector3.new(move_dir.X, 1, move_dir.Z).Unit end
+                
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt)
             else
                 farm_state = "ATTACKING"
                 task.spawn(function()
@@ -398,29 +404,20 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (TP WALK COM DESVIO DE OBSTÁCULOS)
+-- AUTO OPEN DOOR (FARM UNDERGROUND E PROMPT DETECTION)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
-local door_avoid_dir = 1 -- 1 para direita, -1 para esquerda
+local prompt_active = false
+local door_cam_connection = nil
 
-local function open_door_routine(model, part)
-    local hum = get_hum()
-    if hum then hum.WalkSpeed = 0 end
-    
-    local end_time = tick() + 6
-    while tick() < end_time do
-        if not cfg.auto_open_door then break end
-        if not model:IsDescendantOf(Workspace) or (part and part.Transparency == 1) then break end
-        
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-        task.wait(0.2)
+ProximityPromptService.PromptShown:Connect(function(prompt)
+    if cfg.auto_open_door and prompt.Parent and prompt.Parent.Name:lower():find("door") then
+        prompt_active = true
     end
-    
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-    if hum then hum.WalkSpeed = 16 end
-    task.wait(0.5)
-    door_state = "IDLE"
-end
+end)
+ProximityPromptService.PromptHidden:Connect(function()
+    prompt_active = false
+end)
 
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
@@ -428,6 +425,7 @@ local function start_auto_open_door()
             if door_state ~= "IDLE" then
                 door_state = "IDLE"
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                if door_cam_connection then door_cam_connection:Disconnect(); door_cam_connection = nil end
             end
             return
         end
@@ -451,33 +449,61 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
-                door_avoid_dir = math.random(1, 2) == 1 and 1 or -1
             end
         end
 
         if door_state == "WALKING" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then door_state = "IDLE" return end
-
-            local dist = (hrp.Position - target_door_part.Position).Magnitude
-            if dist > 4 then
-                local move_dir = (target_door_part.Position - hrp.Position).Unit
+            
+            local door_pos = target_door_part.Position
+            local dist = (hrp.Position - door_pos).Magnitude
+            
+            if dist > 5 then
+                local move_dir = (door_pos - hrp.Position).Unit
                 
-                -- DESVIO DE OBSTÁCULOS
+                -- Se bater em alguma parede, sobe pra voar por cima
                 local rayParams = RaycastParams.new()
                 rayParams.FilterType = Enum.RaycastFilterType.Exclude
                 rayParams.FilterDescendantsInstances = {char, target_door_model}
-                local ray = Workspace:Raycast(hrp.Position, move_dir * 6, rayParams)
+                local ray = Workspace:Raycast(hrp.Position, move_dir * 8, rayParams)
                 
-                if ray then
-                    -- Bateu em algo, desvia para o lado (esquerda/direita)
-                    local right = move_dir:Cross(Vector3.new(0, 1, 0)).Unit
-                    move_dir = (move_dir + (right * door_avoid_dir * 1.5)).Unit
-                end
+                if ray then move_dir = Vector3.new(move_dir.X, 0.5, move_dir.Z).Unit end
                 
-                hrp.CFrame = hrp.CFrame + (move_dir * 120 * dt) -- TP Walk
+                hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
                 door_state = "OPENING"
-                task.spawn(function() open_door_routine(target_door_model, target_door_part) end)
+                hum.WalkSpeed = 0
+                
+                -- AFUNDA O BONECO E PUXA A CÂMERA PRA CIMA
+                local underground_pos = CFrame.new(door_pos.X, door_pos.Y - 2.5, door_pos.Z)
+                
+                if door_cam_connection then door_cam_connection:Disconnect() end
+                door_cam_connection = RunService.RenderStepped:Connect(function()
+                    if not cfg.auto_open_door or door_state ~= "OPENING" then return end
+                    hrp.CFrame = underground_pos
+                    Camera.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 5, 0), door_pos)
+                end)
+                
+                task.spawn(function()
+                    local end_time = tick() + 8 -- Fica 8 segundos tentando
+                    while tick() < end_time and cfg.auto_open_door do
+                        if not target_door_model or not target_door_model:IsDescendantOf(Workspace) then break end
+                        
+                        if prompt_active then
+                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                            task.wait(0.2)
+                        else
+                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        end
+                        task.wait(0.1)
+                    end
+                    
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    hum.WalkSpeed = 16
+                    if door_cam_connection then door_cam_connection:Disconnect(); door_cam_connection = nil end
+                    door_state = "IDLE"
+                    task.wait(1)
+                end)
             end
         end
     end)
@@ -531,10 +557,10 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Fly)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Desvio de Obstáculos)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Underground + Prompt)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
