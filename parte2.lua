@@ -1,8 +1,7 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - AUTO FARM 200)
+-- NYXIUM HUB - ITADORI (PARTE 2 - AUTO FARM 200 FIX)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -73,13 +72,16 @@ function update_player_movement(dt)
     local hrp = get_hrp()
     local hum = get_hum()
     if not char or not hrp or not hum then return end
-
-    if cfg.speed_bypass then hum.WalkSpeed = 16; if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt) end else hum.WalkSpeed = 16 end
+    if cfg.speed_bypass and not cfg.auto_farm_pumpkin then
+        hum.WalkSpeed = 16
+        if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt) end
+    end
     if cfg.noclip_bypass then
         for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
-        if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
+        if hum.MoveDirection.Magnitude > 0 and not cfg.auto_farm_pumpkin then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
     else
-        for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end end; hrp.CanCollide = true
+        for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end end
+        hrp.CanCollide = true
     end
     if cfg.jump_power_enabled then hum.UseJumpPower = true; hum.JumpPower = cfg.jump_power_val end
     if cfg.fly_bypass then
@@ -99,13 +101,12 @@ function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" then hum.PlatformStand = false end
     end
 end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (VOO 200, GRUDA E MANDA 3)
+-- AUTO FARM PUMPKIN (CORRIGIDO - SEM PULO, VOO 200 REAL)
 local farm_state = "IDLE"
 local farm_target = nil
 local farm_bp = nil
@@ -121,6 +122,16 @@ local function has_pumpkin(plr)
     if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
     for _, item in ipairs(char:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end
     return false
+end
+
+local function create_fly_bp(hrp, y)
+    if farm_bp then farm_bp:Destroy() end
+    farm_bp = Instance.new("BodyPosition")
+    farm_bp.MaxForce = Vector3.new(0, math.huge, 0)
+    farm_bp.P = 10000
+    farm_bp.D = 500
+    farm_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
+    farm_bp.Parent = hrp
 end
 
 local function destroy_farm_bp()
@@ -144,23 +155,15 @@ local function start_auto_farm()
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- Se já tem Pumpkin: sobe 300 e ancora
+        -- Se já tem Pumpkin: sobe 300 e fica lá
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                destroy_farm_bp()
                 farm_fly_y = my_hrp.Position.Y + 300
-                farm_bp = Instance.new("BodyPosition")
-                farm_bp.MaxForce = Vector3.new(0, math.huge, 0)
-                farm_bp.P = 8000
-                farm_bp.D = 500
-                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
-                farm_bp.Parent = my_hrp
+                create_fly_bp(my_hrp, farm_fly_y)
             end
-            if farm_bp then
-                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
-            end
+            if farm_bp then farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z) end
             return
         else
             if farm_state == "FLEE" then
@@ -171,7 +174,6 @@ local function start_auto_farm()
             end
         end
 
-        -- Procura alvo
         if farm_state == "IDLE" then
             local target = nil
             for _, plr in ipairs(Players:GetPlayers()) do
@@ -181,30 +183,20 @@ local function start_auto_farm()
                 farm_target = target
                 farm_state = "FLYING"
                 hum.PlatformStand = true
-                destroy_farm_bp()
                 farm_fly_y = my_hrp.Position.Y + 200
-                farm_bp = Instance.new("BodyPosition")
-                farm_bp.MaxForce = Vector3.new(0, math.huge, 0)
-                farm_bp.P = 8000
-                farm_bp.D = 500
-                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
-                farm_bp.Parent = my_hrp
+                create_fly_bp(my_hrp, farm_fly_y)
             end
         end
 
-        -- Voa 200 acima em direção ao alvo
         if farm_state == "FLYING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil destroy_farm_bp() return end
-
-            -- Mantém altura de 200
             if farm_bp then farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z) end
-
             local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
             local dist_xz = (my_hrp.Position - target_xz).Magnitude
             if dist_xz > 6 then
                 local move_dir = (target_xz - my_hrp.Position).Unit
-                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 180 * dt)
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 200 * dt)
             else
                 farm_state = "ATTACKING"
                 destroy_farm_bp()
@@ -212,11 +204,9 @@ local function start_auto_farm()
             end
         end
 
-        -- Desce, gruda no cara e manda 3
         if farm_state == "ATTACKING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
-
             my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
             if tick() - farm_last_hit > 0.4 then
                 farm_last_hit = tick()
