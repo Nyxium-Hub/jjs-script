@@ -4,7 +4,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
@@ -240,11 +239,14 @@ end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
 local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
 
+-- AUTO BLOCK
 local is_blocking = false
 local function update_auto_block()
     if not cfg.auto_block then
@@ -282,6 +284,7 @@ local function update_auto_block()
     end
 end
 
+-- MOVIMENTAÇÃO
 local fly_vel = nil
 local function update_player_movement(dt)
     local char = LocalPlayer.Character
@@ -317,34 +320,30 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state == "IDLE" then hum.PlatformStand = false end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" then hum.PlatformStand = false end
     end
 end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (TP WALK RETO)
+-- AUTO FARM PUMPKIN
 local farm_state = "IDLE"
-
 local function has_pumpkin(plr)
     local char = plr.Character
     if not char then return false end
+    if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
+    if char:GetAttribute("Pumpkin") or char:GetAttribute("IsPumpkin") then return true end
     local bp = plr:FindFirstChildOfClass("Backpack")
     if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
-    for _, item in ipairs(char:GetChildren()) do if item:IsA("Tool") or item:IsA("Accessory") then local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
-    if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
+    for _, item in ipairs(char:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end
     return false
 end
 
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" then
-                local hum = get_hum()
-                if hum then hum.PlatformStand = false end
-            end
-            farm_state = "IDLE"
-            return
+            if farm_state == "FLEE" then local hum = get_hum() if hum then hum.PlatformStand = false end end
+            farm_state = "IDLE"; return
         end
         
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
@@ -352,17 +351,11 @@ local function start_auto_farm()
 
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
-                farm_state = "FLEE"
-                hum.PlatformStand = true
-                local bp = Instance.new("BodyPosition")
-                bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                bp.Position = my_hrp.Position + Vector3.new(0, 500, 0)
-                bp.Parent = my_hrp
+                farm_state = "FLEE"; hum.PlatformStand = true
+                local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = my_hrp.Position + Vector3.new(0, 500, 0); bp.Parent = my_hrp
                 task.spawn(function()
                     while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
-                        if bp and my_hrp then
-                            bp.Position = my_hrp.Position + Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
-                        end
+                        if bp and my_hrp then bp.Position = my_hrp.Position + Vector3.new(math.random(-20, 20), 10, math.random(-20, 20)) end
                         task.wait(0.5)
                     end
                     if bp then bp:Destroy() end
@@ -378,27 +371,18 @@ local function start_auto_farm()
         if farm_state == "IDLE" then
             local target = nil
             for _, plr in ipairs(Players:GetPlayers()) do 
-                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then 
-                    target = plr 
-                    break 
-                end 
+                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end 
             end
             if target then 
                 local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
                 if target_hrp then
                     farm_state = "WALKING"
                     task.spawn(function()
-                        -- Tween Rápido (TP Walk) até o Player
                         local dist = (my_hrp.Position - target_hrp.Position).Magnitude
                         local tween = TweenService:Create(my_hrp, TweenInfo.new(math.clamp(dist/200, 0.2, 1), Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
-                        tween:Play()
-                        tween.Completed:Wait()
-                        
-                        -- Manda o 3
+                        tween:Play(); tween.Completed:Wait()
                         pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                        task.wait(0.5)
-                        
-                        farm_state = "IDLE"
+                        task.wait(0.5); farm_state = "IDLE"
                     end)
                 end
             end
@@ -406,43 +390,72 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (TIMER 80s)
+-- AUTO OPEN DOOR (FLUTUAR ESPERANDO)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local door_interact_time = 0
-local door_spawn_time = 0
-local original_cam_type = Camera.CameraType
+local is_holding_e = false
+local hover_bp = nil
+local hover_hrp = nil
+
+local function check_if_locked(door)
+    local frame = door:FindFirstChild("Frame")
+    if frame then
+        local children = frame:GetChildren()
+        if children[3] then
+            local thirdChild = children[3]
+            if thirdChild:GetAttribute("Locked") == true then return true end
+            if thirdChild:IsA("BoolValue") and thirdChild.Value == true then return true end
+            local b = thirdChild:FindFirstChild("Locked")
+            if b and b:IsA("BoolValue") and b.Value == true then return true end
+            local success, isLocked = pcall(function() return thirdChild.Locked end)
+            if success and isLocked == true then return true end
+        end
+    end
+    local lockedObj = door:FindFirstChild("Locked", true)
+    if lockedObj then
+        if lockedObj:IsA("BoolValue") and lockedObj.Value == true then return true end
+        if lockedObj:GetAttribute("Locked") == true then return true end
+    end
+    return false
+end
+
+local function remove_hover()
+    if hover_bp then hover_bp:Destroy(); hover_bp = nil end
+    local hum = get_hum()
+    if hum then hum.PlatformStand = false end
+    hover_hrp = nil
+end
 
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
             if door_state ~= "IDLE" then
                 door_state = "IDLE"
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                if is_holding_e then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false end
                 if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     LocalPlayer.Character.HumanoidRootPart.Anchored = false
-                    for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
-                        if p:IsA("BasePart") then p.CanCollide = true end
-                    end
+                    for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end
                 end
-                Camera.CameraType = original_cam_type
+                remove_hover()
             end
-            door_spawn_time = 0
             return
         end
-        
-        -- Verifica o Timer de 1 minuto e 20 segundos (80s)
-        if door_spawn_time == 0 then door_spawn_time = tick() end
-        if tick() - door_spawn_time < 80 then return end
 
         local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
-        if not char or not hrp or not hum or #cached_doors == 0 then return end
+        if not char or not hrp or not hum or #cached_doors == 0 then 
+            remove_hover()
+            return 
+        end
 
-        if door_state == "IDLE" then
-            local closest_door, min_dist = nil, math.huge
-            local closest_part = nil
-            for _, door in ipairs(cached_doors) do
-                if door and door:IsDescendantOf(Workspace) then
+        local closest_door, min_dist = nil, math.huge
+        local closest_part = nil
+        local any_unlocked = false
+        
+        for _, door in ipairs(cached_doors) do
+            if door and door:IsDescendantOf(Workspace) then
+                if not check_if_locked(door) then
+                    any_unlocked = true
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
                         local dist = (hrp.Position - part.Position).Magnitude
@@ -450,15 +463,46 @@ local function start_auto_open_door()
                     end
                 end
             end
-            if closest_door and closest_part then
+        end
+
+        if door_state == "IDLE" then
+            if any_unlocked and closest_door then
+                remove_hover()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
+            else
+                door_state = "WAITING"
+            end
+        end
+        
+        if door_state == "WAITING" then
+            if any_unlocked then
+                remove_hover()
+                target_door_model = closest_door
+                target_door_part = closest_part
+                door_state = "WALKING"
+            else
+                hum.PlatformStand = true
+                if not hover_bp or hover_hrp ~= hrp then
+                    if hover_bp then hover_bp:Destroy() end
+                    hover_hrp = hrp
+                    hover_bp = Instance.new("BodyPosition")
+                    hover_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    hover_bp.P = 5000
+                    hover_bp.Position = hrp.Position + Vector3.new(0, 15, 0)
+                    hover_bp.Parent = hrp
+                else
+                    hover_bp.Position = hrp.Position + Vector3.new(0, 15, 0)
+                end
             end
         end
 
         if door_state == "WALKING" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then door_state = "IDLE" return end
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then 
+                door_state = "IDLE" 
+                return 
+            end
             
             if cfg.door_noclip then
                 for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
@@ -474,34 +518,24 @@ local function start_auto_open_door()
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
-                
                 hrp.Anchored = true
-                for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end
-                Camera.CameraType = Enum.CameraType.Scriptable
                 
-                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 15, target_door_part.Position.Z)
-                hrp.CFrame = underground_pos
-                Camera.CFrame = CFrame.lookAt(underground_pos.Position + Vector3.new(0, 8, 0), target_door_part.Position + Vector3.new(0, 1, 0))
-                
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                if not is_holding_e then
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    is_holding_e = true
+                end
             end
         end
 
         if door_state == "OPENING" then
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                if is_holding_e then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false end
+                
                 hrp.Anchored = false
                 hum.WalkSpeed = 16
-                Camera.CameraType = original_cam_type
                 for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end
                 door_state = "IDLE"
                 task.wait(0.5)
-                return
-            end
-            if target_door_part then
-                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 15, target_door_part.Position.Z)
-                hrp.CFrame = underground_pos
-                Camera.CFrame = CFrame.lookAt(underground_pos.Position + Vector3.new(0, 8, 0), target_door_part.Position + Vector3.new(0, 1, 0))
             end
         end
     end)
@@ -513,7 +547,9 @@ start_auto_farm()
 start_auto_open_door()
 start_esp()
 
+-- ============================================================
 -- INTERFACE WIND UI
+-- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
 
@@ -558,7 +594,7 @@ FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Espera 80s)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Flutua ao Esperar)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
