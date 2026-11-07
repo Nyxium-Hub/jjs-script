@@ -128,38 +128,4 @@ local function start_auto_open_door()
 
         if door_state == "DESCENDING" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then 
-                door_state = "IDLE" return 
-            end
-            
-            local target_y = target_door_part.Position.Y + 3
-            
-            if hrp.Position.Y > target_y then
-                hrp.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - (50 * dt), hrp.Position.Z)
-            else
-                door_state = "OPENING"
-                door_interact_time = tick()
-                hum.PlatformStand = false
-                
-                if not is_holding_e then
-                    if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    is_holding_e = true
-                end
-            end
-        end
-
-        if door_state == "OPENING" then
-            lock_camera()
-            
-            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
-                if is_holding_e then 
-                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
-                end
-                unlock_camera()
-                door_state = "IDLE"
-                task.wait(0.5)
-            end
-        end
-    end)
-end
+                door_state = "IDLE" return
