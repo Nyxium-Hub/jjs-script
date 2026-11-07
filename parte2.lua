@@ -1,6 +1,3 @@
--- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - AUTO FARM 200 FIX)
--- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
@@ -106,7 +103,7 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (CORRIGIDO - SEM PULO, VOO 200 REAL)
+-- AUTO FARM PUMPKIN (DETECÇÃO RIGOROSA E VOO 200 REAL)
 local farm_state = "IDLE"
 local farm_target = nil
 local farm_bp = nil
@@ -119,9 +116,23 @@ local function has_pumpkin(plr)
     if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
     if char:GetAttribute("Pumpkin") or char:GetAttribute("IsPumpkin") then return true end
     local bp = plr:FindFirstChildOfClass("Backpack")
-    if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
-    for _, item in ipairs(char:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end
+    if bp then
+        for _, item in ipairs(bp:GetChildren()) do
+            local n = item.Name:lower()
+            if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end
+            if n:find("pumpkin") and not n:find("pumkin") then return true end
+        end
+    end
+    for _, item in ipairs(char:GetChildren()) do
+        local n = item.Name:lower()
+        if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end
+        if n:find("pumpkin") and not n:find("pumkin") then return true end
+    end
     return false
+end
+
+local function destroy_farm_bp()
+    if farm_bp then farm_bp:Destroy(); farm_bp = nil end
 end
 
 local function create_fly_bp(hrp, y)
@@ -134,14 +145,10 @@ local function create_fly_bp(hrp, y)
     farm_bp.Parent = hrp
 end
 
-local function destroy_farm_bp()
-    if farm_bp then farm_bp:Destroy(); farm_bp = nil end
-end
-
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" or farm_state == "FLYING" then
+            if farm_state ~= "IDLE" then
                 local hum = get_hum()
                 if hum then hum.PlatformStand = false end
                 destroy_farm_bp()
@@ -155,7 +162,6 @@ local function start_auto_farm()
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- Se já tem Pumpkin: sobe 300 e fica lá
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
