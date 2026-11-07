@@ -2,7 +2,7 @@
 -- NYXIUM HUB - JJS HALLOWEEN (PARTE 4 - INTERFACE)
 -- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Window = WindUI:CreateWindow({ Title = "Nyxium | JJS Halloween", Author = "by miteu xz", Folder = "NyxiumJJS", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
+local Window = WindUI:CreateWindow({ Title = "Nyxium | JJS Halloween", Author = "miteuxz", Folder = "NyxiumJJS", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
 
 local function notify(title, text)
     if WindUI and WindUI.Notify then
@@ -57,7 +57,6 @@ floatingBtn.MouseButton1Click:Connect(function()
     hasDragged = false
 end)
 
--- ABA MISC
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "crosshair" })
 MiscTab:Section({ Title = "Aimbot" })
 MiscTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(s) cfg.aim_enabled = s; notify("Aimbot", s and "Ativado" or "Desativado") end })
@@ -73,7 +72,6 @@ MiscTab:Slider({ Title = "Lock On Range", Value = { Min = 5, Max = 50, Default =
 MiscTab:Section({ Title = "Auto Regen" })
 MiscTab:Toggle({ Title = "Auto Regen (R)", Default = false, Callback = function(s) cfg.auto_regen = s; notify("Auto Regen", s and "Ativado" or "Desativado") end })
 
--- ABA PLAYER
 local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
 PlayerTab:Section({ Title = "Speed Bypass" })
 PlayerTab:Toggle({ Title = "Enable Speed", Default = false, Callback = function(s) cfg.speed_bypass = s; notify("Speed Bypass", s and "Ativado" or "Desativado") end })
@@ -89,15 +87,14 @@ PlayerTab:Toggle({ Title = "Enable Jump", Default = false, Callback = function(s
 PlayerTab:Slider({ Title = "Jump Value", Value = { Min = 50, Max = 250, Default = 50 }, Callback = function(v) cfg.jump_power_val = v end })
 PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(s) cfg.inf_jump = s; notify("Infinite Jump", s and "Ativado" or "Desativado") end })
 
--- ABA FARM (Com seções separadas)
-local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
-FarmTab:Section({ Title = "Farm Halloween" })
+local FarmTab = Window:Tab({ Title = "Farm Halloween", Icon = "leaf" })
+FarmTab:Section({ Title = "Halloween" })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s; notify("Auto Pumpkin", s and "Ativado" or "Desativado") end })
 FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s; notify("Auto Door", s and "Ativado" or "Desativado") end })
-FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s; notify("Auto Pumpkin", s and "Ativado" or "Desativado") end })
 
--- ABA VISUALS (com Halloween Door aqui)
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
+VisTab:Section({ Title = "Halloween Door ESP" })
+VisTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s; notify("ESP Door", s and "Ativado" or "Desativado") end })
 VisTab:Section({ Title = "ESP Principal" })
 VisTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(s) cfg.esp_enabled = s; notify("ESP", s and "Ativado" or "Desativado") end })
 VisTab:Toggle({ Title = "Chams", Default = false, Callback = function(s) cfg.esp_chams = s; notify("Chams", s and "Ativado" or "Desativado") end })
@@ -108,5 +105,3 @@ VisTab:Toggle({ Title = "Lines", Default = false, Callback = function(s) cfg.esp
 VisTab:Toggle({ Title = "Nome", Default = false, Callback = function(s) cfg.esp_name = s end })
 VisTab:Toggle({ Title = "Distância", Default = false, Callback = function(s) cfg.esp_distance = s end })
 VisTab:Toggle({ Title = "Barra de Vida", Default = false, Callback = function(s) cfg.esp_health_bar = s end })
-VisTab:Section({ Title = "Halloween Door ESP" })
-VisTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s; notify("ESP Door", s and "Ativado" or "Desativado") end })
