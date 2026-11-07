@@ -2,10 +2,33 @@
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
 local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
+
+local is_regenerating = false
+task.spawn(function()
+    while task.wait(0.1) do
+        if cfg.auto_regen then
+            local hum = get_hum()
+            if hum and hum.Health <= 0 and not is_regenerating then
+                is_regenerating = true
+                task.spawn(function()
+                    local end_time = tick() + 3
+                    while tick() < end_time do
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                        pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                    end
+                    is_regenerating = false
+                end)
+            end
+        end
+    end
+end)
 
 local is_blocking = false
 local function update_auto_block()
@@ -50,14 +73,18 @@ local function update_player_movement(dt)
     local hrp = get_hrp()
     local hum = get_hum()
     if not char or not hrp or not hum then return end
+    
     if cfg.speed_bypass then hum.WalkSpeed = 16; if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt) end else hum.WalkSpeed = 16 end
+    
     if cfg.noclip_bypass then
         for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
         if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
     else
         for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end end; hrp.CanCollide = true
     end
+    
     if cfg.jump_power_enabled then hum.UseJumpPower = true; hum.JumpPower = cfg.jump_power_val end
+    
     if cfg.fly_bypass then
         hum.PlatformStand = true
         if not fly_vel or fly_vel.Parent ~= hrp then
@@ -81,9 +108,12 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
+-- AUTO FARM PUMPKIN (MESMO SISTEMA DO DOOR)
 local farm_state = "IDLE"
-local farm_fly_bp = nil
 local farm_target = nil
+local farm_walk_timer = 0
+local farm_flee_bp = nil
+local farm_flee_target = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -99,56 +129,101 @@ end
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" then local hum = get_hum() if hum then hum.PlatformStand = false end end
-            farm_state = "IDLE"; farm_target = nil
-            if farm_fly_bp then farm_fly_bp:Destroy() farm_fly_bp = nil end
+            if farm_state == "FLEE" then 
+                local hum = get_hum() 
+                if hum then hum.PlatformStand = false end
+                if farm_flee_bp then farm_flee_bp:Destroy(); farm_flee_bp = nil end
+            end
+            farm_state = "IDLE"
+            farm_target = nil
+            farm_flee_target = nil
+            farm_walk_timer = 0
             return
         end
+        
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
+
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                farm_fly_bp = Instance.new("BodyPosition")
-                farm_fly_bp.MaxForce = Vector3.new(0, math.huge, 0)
-                farm_fly_bp.P = 5000
-                farm_fly_bp.D = 500
-                farm_fly_bp.Position = my_hrp.Position + Vector3.new(0, 300, 0)
-                farm_fly_bp.Parent = my_hrp
+                farm_flee_target = my_hrp.Position + Vector3.new(0, 300, 0)
+                farm_flee_bp = Instance.new("BodyPosition")
+                farm_flee_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                farm_flee_bp.P = 10000
+                farm_flee_bp.D = 500
+                farm_flee_bp.Position = farm_flee_target
+                farm_flee_bp.Parent = my_hrp
             end
-            if farm_fly_bp then farm_fly_bp.Position = Vector3.new(my_hrp.Position.X, my_hrp.Position.Y + 5, my_hrp.Position.Z) end
+            if farm_flee_bp then
+                farm_flee_bp.Position = farm_flee_target
+            end
             return
         else
-            if farm_state == "FLEE" then
+            if farm_state == "FLEE" then 
                 hum.PlatformStand = false
-                if farm_fly_bp then farm_fly_bp:Destroy() farm_fly_bp = nil end
+                if farm_flee_bp then farm_flee_bp:Destroy(); farm_flee_bp = nil end
                 farm_state = "IDLE"
+                farm_flee_target = nil
             end
         end
+
         if farm_state == "IDLE" then
             local target = nil
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
+            for _, plr in ipairs(Players:GetPlayers()) do 
+                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end 
             end
-            if target then
+            if target then 
                 farm_target = target
-                farm_state = "ATTACKING"
+                farm_state = "WALKING"
+                farm_walk_timer = 0
             end
         end
-        if farm_state == "ATTACKING" and farm_target then
+
+        if farm_state == "WALKING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
+            
+            farm_walk_timer = farm_walk_timer + dt
             local dist = (my_hrp.Position - target_hrp.Position).Magnitude
+            
             if dist > 4 then
                 local move_dir = (target_hrp.Position - my_hrp.Position).Unit
+                local ray_params = RaycastParams.new()
+                ray_params.FilterType = Enum.RaycastFilterType.Exclude
+                ray_params.FilterDescendantsInstances = {char, farm_target.Character}
+                ray_params.IgnoreWater = true
+                
+                if farm_walk_timer > 2.5 then
+                    move_dir = Vector3.new(0, 1, 0)
+                else
+                    local angles = {0, 20, -20, 45, -45, 70, -70, 90, -90}
+                    for _, angle in ipairs(angles) do
+                        local rotated_dir = (CFrame.Angles(0, math.rad(angle), 0) * move_dir)
+                        local hit = Workspace:Raycast(my_hrp.Position, rotated_dir * 20, ray_params)
+                        if not hit then move_dir = rotated_dir break end
+                    end
+                end
+                
                 my_hrp.CFrame = my_hrp.CFrame + (move_dir * 80 * dt)
             else
-                my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                task.wait(0.2)
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
-                task.wait(0.2)
+                farm_state = "ATTACKING"
+                task.spawn(function()
+                    local end_time = tick() + 1.5
+                    while tick() < end_time and cfg.auto_farm_pumpkin do
+                        if not farm_target or not farm_target.Character then break end
+                        local th = farm_target.Character:FindFirstChild("HumanoidRootPart")
+                        if th then
+                            my_hrp.CFrame = CFrame.new(th.Position + Vector3.new(0, 0, 3))
+                        end
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                        task.wait(0.2)
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
+                        task.wait(0.2)
+                    end
+                    farm_state = "IDLE"
+                end)
             end
         end
     end)
