@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR FIX FINAL)
+-- NYXIUM HUB - ITADORI (PARTE 3 - ANCORAGEM FORÇADA)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -28,6 +28,26 @@ local function check_if_locked(door)
     return false
 end
 
+-- LOOP DE FORÇA DE ANCORAGEM (roda independente do Heartbeat)
+task.spawn(function()
+    while task.wait(0.05) do
+        if cfg.auto_open_door then
+            local hrp = get_hrp()
+            if hrp then
+                local is_flying = (door_state == "SUBINDO_INICIAL" or door_state == "PROCURANDO" or door_state == "VOANDO" or door_state == "DESCENDO_ATRAS")
+                if is_flying then
+                    hrp.Anchored = true
+                    local hum = get_hum()
+                    if hum then
+                        hum.PlatformStand = true
+                        hum.WalkSpeed = 0
+                    end
+                end
+            end
+        end
+    end
+end)
+
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
@@ -54,17 +74,7 @@ local function start_auto_open_door()
         end
         if #cached_doors == 0 then return end
 
-        -- ============================================
-        -- FORÇA ANCORAGEM EM TODAS AS FASES DE VOO
-        -- ============================================
-        local is_flying = (door_state == "SUBINDO_INICIAL" or door_state == "PROCURANDO" or door_state == "VOANDO" or door_state == "DESCENDO_ATRAS")
-        if is_flying then
-            hrp.Anchored = true
-            hum.PlatformStand = true
-            hum.WalkSpeed = 0
-        end
-
-        -- --- FASE 1: SUBIR 200 SEMPRE ---
+        -- SUBINDO 200
         if door_state == "SUBINDO_INICIAL" then
             if not fly_target_y then
                 fly_target_y = hrp.Position.Y + 200
@@ -79,7 +89,7 @@ local function start_auto_open_door()
             return
         end
 
-        -- --- FASE 2: PROCURAR PORTA ---
+        -- PROCURANDO
         if door_state == "PROCURANDO" then
             local closest_door, min_dist = nil, math.huge
             local closest_part = nil
@@ -107,7 +117,7 @@ local function start_auto_open_door()
             return
         end
 
-        -- --- FASE 3: VOAR ATÉ EM CIMA DA PORTA ---
+        -- VOANDO
         if door_state == "VOANDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
@@ -123,12 +133,11 @@ local function start_auto_open_door()
             return
         end
 
-        -- --- FASE 4: DESCER 25 STUDS ATRÁS DA PORTA ---
+        -- DESCENDO 25 STUDS ATRÁS
         if door_state == "DESCENDO_ATRAS" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            -- LookVector negativado = atrás da porta
             local back_pos = target_door_part.Position - (target_door_part.CFrame.LookVector * 25)
             local target_pos = Vector3.new(back_pos.X, target_door_part.Position.Y + 2, back_pos.Z)
             local current_pos = hrp.Position
@@ -146,7 +155,7 @@ local function start_auto_open_door()
             return
         end
 
-        -- --- FASE 5: ANDAR ATÉ A PORTA E INTERAGIR ---
+        -- ANDANDO ATÉ A PORTA
         if door_state == "ANDANDO_PORTA" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
@@ -171,20 +180,17 @@ local function start_auto_open_door()
             return
         end
 
-        -- --- FASE 6: SEGURAR E POR 6S ---
+        -- OPENING
         if door_state == "OPENING" then
             if hum.Health <= 0 then
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             end
-            if target_door_part then
-                hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
-            end
+            if target_door_part then hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0)) end
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 if is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
-                -- Reset pra próxima porta
                 door_state = "SUBINDO_INICIAL"
                 fly_target_y = nil
             end
