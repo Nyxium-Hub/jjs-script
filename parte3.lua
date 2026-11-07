@@ -1,6 +1,3 @@
--- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR FIX)
--- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
@@ -85,7 +82,15 @@ local function start_auto_open_door()
                 stop_waiting()
                 target_door_model = closest_door
                 target_door_part = closest_part
-                door_state = "WALKING"
+                door_state = "FLYING"
+                hum.PlatformStand = true
+                wait_fly_y = closest_part.Position.Y + 200
+                wait_bp = Instance.new("BodyPosition")
+                wait_bp.MaxForce = Vector3.new(0, math.huge, 0)
+                wait_bp.P = 10000
+                wait_bp.D = 500
+                wait_bp.Position = Vector3.new(hrp.Position.X, wait_fly_y, hrp.Position.Z)
+                wait_bp.Parent = hrp
             else
                 door_state = "WAITING"
                 hum.PlatformStand = true
@@ -106,31 +111,50 @@ local function start_auto_open_door()
                 stop_waiting()
                 target_door_model = closest_door
                 target_door_part = closest_part
-                door_state = "WALKING"
+                door_state = "FLYING"
+                hum.PlatformStand = true
+                wait_fly_y = closest_part.Position.Y + 200
+                wait_bp = Instance.new("BodyPosition")
+                wait_bp.MaxForce = Vector3.new(0, math.huge, 0)
+                wait_bp.P = 10000
+                wait_bp.D = 500
+                wait_bp.Position = Vector3.new(hrp.Position.X, wait_fly_y, hrp.Position.Z)
+                wait_bp.Parent = hrp
             else
                 if wait_bp then wait_bp.Position = Vector3.new(hrp.Position.X, wait_fly_y, hrp.Position.Z) end
             end
         end
 
-        if door_state == "WALKING" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then
+        if door_state == "FLYING" then
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "IDLE" return
             end
-            if cfg.door_noclip then
-                for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+            if wait_bp then wait_bp.Position = Vector3.new(hrp.Position.X, wait_fly_y, hrp.Position.Z) end
+            local door_xz = Vector3.new(target_door_part.Position.X, hrp.Position.Y, target_door_part.Position.Z)
+            local dist_xz = (hrp.Position - door_xz).Magnitude
+            if dist_xz > 5 then
+                local move_dir = (door_xz - hrp.Position).Unit
+                hrp.CFrame = hrp.CFrame + (move_dir * 150 * dt)
+            else
+                door_state = "DESCENDING"
+                if wait_bp then wait_bp:Destroy(); wait_bp = nil end
+                hum.PlatformStand = false
+            end
+        end
+
+        if door_state == "DESCENDING" then
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
+                door_state = "IDLE" return
             end
             local target_pos = target_door_part.Position
-            if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then target_pos = target_prompt.Parent.Position end
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 4 then
                 local move_dir = (target_pos - hrp.Position).Unit
-                hrp.CFrame = hrp.CFrame + (move_dir * 150 * dt)
+                hrp.CFrame = hrp.CFrame + (move_dir * 200 * dt)
             else
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
-                for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
-                -- Aperta E UMA ÚNICA VEZ
                 if not is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
