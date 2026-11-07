@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR FINAL)
+-- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR CORRIGIDO)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -8,7 +8,6 @@ local door_interact_time = 0
 local is_holding_e = false
 local fly_target_y = nil
 local wait_start = 0
-local last_combo_hit = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -78,7 +77,6 @@ local function start_auto_open_door()
         end
         if #cached_doors == 0 then return end
 
-        -- FASE 1: SUBIR 300 E ESPERAR
         if door_state == "SUBINDO_INICIAL" then
             if not fly_target_y then
                 fly_target_y = hrp.Position.Y + 300
@@ -93,7 +91,6 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 2: PROCURAR PORTA DESTRANCADA
         if door_state == "PROCURANDO" then
             local closest_door, min_dist = nil, math.huge
             local closest_part = nil
@@ -121,12 +118,10 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 3: VOAR A 250 STUDS ACIMA DO MAPA ATÉ EM CIMA DA PORTA
         if door_state == "VOANDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            -- 250 studs acima do mapa (não do meu personagem)
             local target_y = target_door_part.Position.Y + 250
             local target_xz = Vector3.new(target_door_part.Position.X, target_y, target_door_part.Position.Z)
             local dir = target_xz - hrp.Position
@@ -141,7 +136,6 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 4: ESPERAR 1 SEGUNDO EM CIMA DA PORTA
         if door_state == "ESPERANDO" then
             if tick() - wait_start >= 1 then
                 door_state = "DESCENDO"
@@ -149,13 +143,13 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 5: DESCER 30 STUDS À FRENTE DA PORTA
+        -- DESCE 50 STUDS À DIREITA DA PORTA
         if door_state == "DESCENDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            local front_pos = target_door_part.Position + (target_door_part.CFrame.LookVector * 30)
-            local target_pos = Vector3.new(front_pos.X, target_door_part.Position.Y + 2, front_pos.Z)
+            local right_pos = target_door_part.Position + (target_door_part.CFrame.RightVector * 50)
+            local target_pos = Vector3.new(right_pos.X, target_door_part.Position.Y + 2, right_pos.Z)
             local dir = target_pos - hrp.Position
             local dist = dir.Magnitude
             if dist > 3 then
@@ -169,7 +163,6 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 6: ANDAR ATÉ A PORTA
         if door_state == "ANDANDO_PORTA" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
@@ -184,7 +177,6 @@ local function start_auto_open_door()
             else
                 door_state = "OPENING"
                 door_interact_time = tick()
-                last_combo_hit = 0
                 if not is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -194,26 +186,13 @@ local function start_auto_open_door()
             return
         end
 
-        -- FASE 7: SEGURAR E E ATACAR 1,2,3,4 ENQUANTO INTERAGE
+        -- OPENING: só segura E, sem atacar (sem travar tela)
         if door_state == "OPENING" then
             if hum.Health <= 0 then
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             end
             if target_door_part then
                 hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
-            end
-            -- Atacar 1,2,3,4 enquanto segura E (sem soltar E)
-            if tick() - last_combo_hit > 0.6 then
-                last_combo_hit = tick()
-                task.spawn(function()
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end)
-                    task.wait(0.05)
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
-                    task.wait(0.05)
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                    task.wait(0.05)
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end)
-                end)
             end
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 if is_holding_e then
