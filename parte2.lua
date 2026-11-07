@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM VOO + SPEED SEM PULO)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -77,9 +77,10 @@ local function update_player_movement(dt)
     local door_active = cfg.auto_open_door and door_state ~= "IDLE"
 
     if cfg.speed_bypass and not farming_pumpkin then
-        hum.WalkSpeed = 16
-        if hum.MoveDirection.Magnitude > 0 then
-            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt)
+        hum.WalkSpeed = math.clamp(cfg.speed_val, 16, 50)
+        if cfg.speed_val > 50 and hum.MoveDirection.Magnitude > 0 then
+            local extra = cfg.speed_val - 50
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * extra * dt)
         end
     elseif not farming_pumpkin then
         hum.WalkSpeed = 16
