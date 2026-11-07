@@ -1,3 +1,6 @@
+-- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 2 - SPEED + BLOCK + FARM)
+-- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
@@ -27,7 +30,7 @@ task.spawn(function()
 end)
 
 local is_blocking = false
-function update_auto_block()
+local function update_auto_block()
     if not cfg.auto_block then
         if is_blocking then pcall(function() BlockDeactivate:FireServer() end); VirtualInputManager:SendMouseButtonEvent(0, 0, 2, false, game, 0); is_blocking = false end
         return
@@ -64,23 +67,31 @@ function update_auto_block()
 end
 
 local fly_vel = nil
-function update_player_movement(dt)
+local function update_player_movement(dt)
     local char = LocalPlayer.Character
     local hrp = get_hrp()
     local hum = get_hum()
     if not char or not hrp or not hum then return end
-    if cfg.speed_bypass and not cfg.auto_farm_pumpkin then
+
+    if cfg.speed_bypass then
         hum.WalkSpeed = 16
-        if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt) end
+        if hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.speed_val * dt)
+        end
+    else
+        hum.WalkSpeed = 16
     end
+
     if cfg.noclip_bypass then
         for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
-        if hum.MoveDirection.Magnitude > 0 and not cfg.auto_farm_pumpkin then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
+        if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
     else
         for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end end
         hrp.CanCollide = true
     end
+
     if cfg.jump_power_enabled then hum.UseJumpPower = true; hum.JumpPower = cfg.jump_power_val end
+
     if cfg.fly_bypass then
         hum.PlatformStand = true
         if not fly_vel or fly_vel.Parent ~= hrp then
@@ -98,17 +109,16 @@ function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" then hum.PlatformStand = false end
     end
 end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (SUAVIDADE E VOO 200 REAL)
+-- FARM (versão original que funcionava)
 local farm_state = "IDLE"
-local farm_target = nil
-local farm_fly_y = nil
-local farm_last_hit = 0
-local farm_target_y = nil
+local flee_bp = nil
+local flee_target = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -116,124 +126,66 @@ local function has_pumpkin(plr)
     if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
     if char:GetAttribute("Pumpkin") or char:GetAttribute("IsPumpkin") then return true end
     local bp = plr:FindFirstChildOfClass("Backpack")
-    if bp then
-        for _, item in ipairs(bp:GetChildren()) do
-            local n = item.Name:lower()
-            if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end
-            if n:find("pumpkin") and not n:find("pumkin") then return true end
-        end
-    end
-    for _, item in ipairs(char:GetChildren()) do
-        local n = item.Name:lower()
-        if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end
-        if n:find("pumpkin") and not n:find("pumkin") then return true end
-    end
+    if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end end
+    for _, item in ipairs(char:GetChildren()) do local n = item.Name:lower() if n:find("pumpkin") or n:find("pum") or n:find("abóbora") or n:find("abobora") then return true end end
     return false
 end
 
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state ~= "IDLE" then
+            if farm_state == "FLEE" then
                 local hum = get_hum()
                 if hum then hum.PlatformStand = false end
+                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
             end
             farm_state = "IDLE"
-            farm_target = nil
-            farm_fly_y = nil
-            farm_target_y = nil
+            flee_target = nil
             return
         end
 
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- Se já tem pumpkin: sobe 300 devagar
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                farm_fly_y = my_hrp.Position.Y + 300
+                flee_target = my_hrp.Position + Vector3.new(0, 300, 0)
+                flee_bp = Instance.new("BodyPosition")
+                flee_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                flee_bp.P = 10000
+                flee_bp.D = 500
+                flee_bp.Position = flee_target
+                flee_bp.Parent = my_hrp
             end
-            local current_y = my_hrp.Position.Y
-            if current_y < farm_fly_y - 2 then
-                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 8, my_hrp.Position.Z)
-            else
-                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
+            if flee_bp then
+                flee_bp.Position = flee_target
             end
             return
         else
             if farm_state == "FLEE" then
                 hum.PlatformStand = false
+                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
                 farm_state = "IDLE"
-                farm_fly_y = nil
+                flee_target = nil
             end
         end
 
-        -- Procura alvo
-        if farm_state == "IDLE" then
-            local target = nil
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
-            end
-            if target then
-                farm_target = target
-                farm_state = "SUBINDO"
-                hum.PlatformStand = true
-                farm_fly_y = my_hrp.Position.Y + 200
-            end
+        local target = nil
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
         end
 
-        -- Sobe devagar
-        if farm_state == "SUBINDO" then
-            local current_y = my_hrp.Position.Y
-            if current_y < farm_fly_y - 2 then
-                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 8, my_hrp.Position.Z)
-            else
-                farm_state = "VOANDO"
-            end
-        end
-
-        -- Voa por cima do alvo
-        if farm_state == "VOANDO" and farm_target then
-            local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
-            if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
-            my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
-            local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
-            local dist_xz = (my_hrp.Position - target_xz).Magnitude
-            if dist_xz > 6 then
-                local move_dir = (target_xz - my_hrp.Position).Unit
-                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt)
-            else
-                farm_state = "DESCENDO"
-                farm_target_y = target_hrp.Position.Y
-            end
-        end
-
-        -- Desce devagar
-        if farm_state == "DESCENDO" and farm_target and farm_target_y then
-            local current_y = my_hrp.Position.Y
-            if current_y > farm_target_y + 3 then
-                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y - 8, my_hrp.Position.Z)
-            else
+        if target then
+            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if target_hrp then
                 farm_state = "ATTACKING"
-                hum.PlatformStand = false
+                my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
             end
-        end
-
-        -- Ataca
-        if farm_state == "ATTACKING" and farm_target then
-            local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
-            if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
-            my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
-            if tick() - farm_last_hit > 0.4 then
-                farm_last_hit = tick()
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
-                    task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
-                end)
-            end
+        else
+            farm_state = "IDLE"
         end
     end)
 end
