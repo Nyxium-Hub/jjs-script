@@ -23,7 +23,7 @@ K.cfg = {
     fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
     auto_farm_pumpkin = false, esp_door = false, auto_open_door = false, door_noclip = true,
     esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
-    esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false,
+    esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false, auto_regen = false,
 }
 local cfg = K.cfg
 
@@ -246,6 +246,29 @@ local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
 local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
 
+-- AUTO REGEN (APERTA R QUANDO MORRE)
+local is_regenerating = false
+task.spawn(function()
+    while task.wait(0.1) do
+        if cfg.auto_regen then
+            local hum = get_hum()
+            if hum and hum.Health <= 0 and not is_regenerating then
+                is_regenerating = true
+                task.spawn(function()
+                    local end_time = tick() + 3
+                    while tick() < end_time do
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                        pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                    end
+                    is_regenerating = false
+                end)
+            end
+        end
+    end
+end)
+
 -- AUTO BLOCK
 local is_blocking = false
 local function update_auto_block()
@@ -320,7 +343,7 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" then hum.PlatformStand = false end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" then hum.PlatformStand = false end
     end
 end
 
@@ -389,16 +412,22 @@ local function start_auto_farm()
         end
     end)
 end
-
--- AUTO OPEN DOOR (FLUTUAR ESPERANDO)
+-- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 3)
+-- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
+local target_prompt = nil
 local door_interact_time = 0
 local is_holding_e = false
 local hover_bp = nil
 local hover_hrp = nil
 
 local function check_if_locked(door)
+    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then
+        return not prompt.Enabled
+    end
     local frame = door:FindFirstChild("Frame")
     if frame then
         local children = frame:GetChildren()
@@ -408,14 +437,10 @@ local function check_if_locked(door)
             if thirdChild:IsA("BoolValue") and thirdChild.Value == true then return true end
             local b = thirdChild:FindFirstChild("Locked")
             if b and b:IsA("BoolValue") and b.Value == true then return true end
-            local success, isLocked = pcall(function() return thirdChild.Locked end)
-            if success and isLocked == true then return true end
         end
     end
-    local lockedObj = door:FindFirstChild("Locked", true)
-    if lockedObj then
-        if lockedObj:IsA("BoolValue") and lockedObj.Value == true then return true end
-        if lockedObj:GetAttribute("Locked") == true then return true end
+    for _, obj in ipairs(door:GetDescendants()) do
+        if obj.Name == "Locked" and obj:IsA("BoolValue") and obj.Value == true then return true end
     end
     return false
 end
@@ -459,7 +484,12 @@ local function start_auto_open_door()
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
                         local dist = (hrp.Position - part.Position).Magnitude
-                        if dist < min_dist then min_dist, closest_door, closest_part = dist, door, part end
+                        if dist < min_dist then 
+                            min_dist = dist
+                            closest_door = door
+                            closest_part = part
+                            target_prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+                        end
                     end
                 end
             end
@@ -508,17 +538,20 @@ local function start_auto_open_door()
                 for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
             end
             
-            local door_pos = target_door_part.Position
-            local dist = (hrp.Position - door_pos).Magnitude
+            local target_pos = target_door_part.Position
+            if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then
+                target_pos = target_prompt.Parent.Position
+            end
             
-            if dist > 6 then
-                local move_dir = (door_pos - hrp.Position).Unit
+            local dist = (hrp.Position - target_pos).Magnitude
+            
+            if dist > 4 then
+                local move_dir = (target_pos - hrp.Position).Unit
                 hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
-                hrp.Anchored = true
                 
                 if not is_holding_e then
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -528,10 +561,18 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
+            -- ANTI-ATAQUE: Fica flutuando e andando em círculos (strafe) na porta
+            if target_door_part then
+                local angle = tick() * 5
+                local offset = Vector3.new(math.cos(angle) * 2, 2.5, math.sin(angle) * 2)
+                hrp.CFrame = CFrame.new(target_door_part.Position + offset)
+                hum.PlatformStand = true 
+            end
+
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 if is_holding_e then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false end
                 
-                hrp.Anchored = false
+                hum.PlatformStand = false
                 hum.WalkSpeed = 16
                 for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end
                 door_state = "IDLE"
@@ -541,6 +582,7 @@ local function start_auto_open_door()
     end)
 end
 
+-- LOOP INICIAL
 RunService.Heartbeat:Connect(update_auto_block)
 RunService.RenderStepped:Connect(update_player_movement)
 start_auto_farm()
@@ -574,6 +616,9 @@ MiscTab:Section({ Title = "Console Lock On" })
 MiscTab:Toggle({ Title = "Enable Lock On", Default = false, Callback = function(s) cfg.lock_on_enabled = s end })
 MiscTab:Slider({ Title = "Lock On Range (Studs)", Desc = "Só trava se o cara estiver perto", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.lock_on_range = v end })
 
+MiscTab:Section({ Title = "Auto Regen" })
+MiscTab:Toggle({ Title = "Auto Regen (R Key)", Desc = "Aperta R para reviver", Default = false, Callback = function(s) cfg.auto_regen = s end })
+
 local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
 PlayerTab:Section({ Title = "Speed Bypass" })
 PlayerTab:Toggle({ Title = "Enable Speed Bypass", Default = false, Callback = function(s) cfg.speed_bypass = s end })
@@ -594,7 +639,7 @@ FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Flutua ao Esperar)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Strafe Protection)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
