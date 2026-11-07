@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FARM COM MOVETO)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM CFrame SUAVE)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -122,11 +122,12 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM PUMPKIN COM MOVETO (SEM PULAR, SEM TWEEN)
+-- FARM PUMPKIN (CFrame direto + PlatformStand pra evitar pulo)
 local farm_state = "IDLE"
 local farm_target = nil
 local farm_last_hit = 0
 local farm_speed = 60
+local farm_walk_timer = 0
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -139,11 +140,30 @@ local function has_pumpkin(plr)
     return false
 end
 
+local function smart_nav(start_pos, target_pos, char, target_char)
+    farm_walk_timer = farm_walk_timer + 0.016
+    if farm_walk_timer > 2.5 then return Vector3.new(0, 0.5, 0).Unit end
+    local base_dir = (target_pos - start_pos).Unit
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, target_char}
+    params.IgnoreWater = true
+    local angles = {0, 15, -15, 30, -30, 45, -45, 60, -60}
+    for _, ang in ipairs(angles) do
+        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
+        local hit = Workspace:Raycast(start_pos, rot * 12, params)
+        if not hit then return rot end
+    end
+    return base_dir
+end
+
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
             farm_state = "IDLE"
             farm_target = nil
+            local hum = get_hum()
+            if hum then hum.PlatformStand = false end
             return
         end
 
@@ -152,6 +172,7 @@ local function start_auto_farm()
 
         if has_pumpkin(LocalPlayer) then
             farm_state = "DONE"
+            if hum.PlatformStand then hum.PlatformStand = false end
             return
         end
 
@@ -163,19 +184,26 @@ local function start_auto_farm()
             if target then
                 farm_target = target
                 farm_state = "WALKING"
+                farm_walk_timer = 0
+                hum.PlatformStand = true
             end
             return
         end
 
         if farm_state == "WALKING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
-            if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
+            if not target_hrp or not is_alive(farm_target) then 
+                farm_state = "IDLE" 
+                farm_target = nil 
+                hum.PlatformStand = false
+                return 
+            end
             local dist = (my_hrp.Position - target_hrp.Position).Magnitude
             if dist > 3 then
-                hum.WalkSpeed = farm_speed
-                hum:MoveTo(target_hrp.Position)
+                hum.PlatformStand = true
+                local move_dir = smart_nav(my_hrp.Position, target_hrp.Position, char, farm_target.Character)
+                my_hrp.CFrame = CFrame.lookAt(my_hrp.Position + (move_dir * farm_speed * dt), my_hrp.Position + move_dir)
             else
-                hum:MoveTo(my_hrp.Position)
                 farm_state = "ATTACKING"
             end
             return
@@ -183,13 +211,18 @@ local function start_auto_farm()
 
         if farm_state == "ATTACKING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
-            if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
+            if not target_hrp or not is_alive(farm_target) then 
+                farm_state = "IDLE" 
+                farm_target = nil 
+                hum.PlatformStand = false
+                return 
+            end
             local dist = (my_hrp.Position - target_hrp.Position).Magnitude
             if dist > 3 then
                 farm_state = "WALKING"
                 return
             end
-            hum:MoveTo(my_hrp.Position)
+            hum.PlatformStand = false
             if tick() - farm_last_hit > 0.4 then
                 farm_last_hit = tick()
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
