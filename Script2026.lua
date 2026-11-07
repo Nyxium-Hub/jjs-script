@@ -32,7 +32,7 @@ local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.Characte
 local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
 local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
 
--- CACHE DE PORTAS OTIMIZADO
+-- CACHE DE PORTAS
 local cached_doors = {}
 task.spawn(function()
     while task.wait(2) do
@@ -317,7 +317,7 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin then hum.PlatformStand = false end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state == "IDLE" then hum.PlatformStand = false end
     end
 end
 
@@ -371,11 +371,8 @@ local function start_auto_farm()
         task.spawn(function()
             local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp then farm_state = "IDLE" return end
-            
-            -- TELEPORTE DIRETO E RÁPIDO
             my_hrp.CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)
             task.wait(0.1)
-            
             farm_state = "ATTACKING"
             local end_time = tick() + 2
             while tick() < end_time and cfg.auto_farm_pumpkin do
@@ -389,58 +386,81 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (LÓGICA DE ESPERA E VERIFICAÇÃO)
-local door_opening = false
+-- AUTO OPEN DOOR (TP WALK)
+local door_state = "IDLE"
+local target_door_model, target_door_part = nil, nil
+
+local function open_door_routine(model, part)
+    local hum = get_hum()
+    if hum then hum.WalkSpeed = 0 end
+    
+    local end_time = tick() + 6
+    while tick() < end_time do
+        if not cfg.auto_open_door then break end
+        -- Se a porta sumiu ou ficou invisível, consideramos aberta
+        if not model:IsDescendantOf(Workspace) or (part and part.Transparency == 1) then break end
+        
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.2)
+    end
+    
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    if hum then hum.WalkSpeed = 16 end
+    task.wait(0.5)
+    door_state = "IDLE"
+end
+
 local function start_auto_open_door()
-    task.spawn(function()
-        while task.wait(1) do
-            if not cfg.auto_open_door or door_opening then continue end
-            
-            local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
-            if not char or not my_hrp or #cached_doors == 0 then continue end
-            
-            -- Acha a porta mais próxima
+    RunService.Heartbeat:Connect(function(dt)
+        if not cfg.auto_open_door then
+            if door_state ~= "IDLE" then
+                door_state = "IDLE"
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            end
+            return
+        end
+
+        local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
+        if not char or not hrp or not hum or #cached_doors == 0 then return end
+
+        if door_state == "IDLE" then
             local closest_door, min_dist = nil, math.huge
-            local door_part = nil
-            
+            local closest_part = nil
             for _, door in ipairs(cached_doors) do
                 if door and door:IsDescendantOf(Workspace) then
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
-                        local dist = (my_hrp.Position - part.Position).Magnitude
+                        local dist = (hrp.Position - part.Position).Magnitude
                         if dist < min_dist then
                             min_dist = dist
                             closest_door = door
-                            door_part = part
+                            closest_part = part
                         end
                     end
                 end
             end
-            
-            if closest_door and door_part then
-                door_opening = true
-                
-                -- Vai até a porta (TP Direto)
-                hum.PlatformStand = true
-                my_hrp.CFrame = door_part.CFrame * CFrame.new(0, 0, 3)
-                task.wait(0.5)
-                hum.PlatformStand = false
-                
-                -- Segura E por no máximo 6 segundos
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                local timeout = tick() + 6
-                local opened = false
-                
-                while tick() < timeout do
-                    task.wait(0.1)
-                    -- Verifica se a porta sumiu ou ficou invisível
-                    if not closest_door:IsDescendantOf(Workspace) then opened = true break end
-                    if door_part.Transparency == 1 then opened = true break end
-                end
-                
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                task.wait(0.5) -- Pequeno delay antes de ir pra próxima
-                door_opening = false
+            if closest_door and closest_part then
+                target_door_model = closest_door
+                target_door_part = closest_part
+                door_state = "WALKING"
+            end
+        end
+
+        if door_state == "WALKING" then
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
+                door_state = "IDLE"
+                return
+            end
+
+            local dist = (hrp.Position - target_door_part.Position).Magnitude
+            if dist > 4 then
+                local move_dir = (target_door_part.Position - hrp.Position).Unit
+                hrp.CFrame = hrp.CFrame + (move_dir * 120 * dt) -- TP Walk em 120 studs/seg
+            else
+                door_state = "OPENING"
+                task.spawn(function()
+                    open_door_routine(target_door_model, target_door_part)
+                end)
             end
         end
     end)
@@ -497,7 +517,7 @@ FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Apenas liberadas)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (TP Walk)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
