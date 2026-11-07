@@ -22,7 +22,7 @@ K.cfg = {
     lock_on_enabled = false, lock_on_range = 20, lock_on_key = Enum.KeyCode.LeftShift, lock_on_holding = false,
     speed_bypass = false, speed_val = 60, noclip_bypass = false, noclip_speed = 60,
     fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
-    auto_farm_pumpkin = false, esp_door = false, auto_open_door = false,
+    auto_farm_pumpkin = false, esp_door = false, auto_open_door = false, door_noclip = true,
     esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
     esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false,
 }
@@ -365,6 +365,8 @@ local function start_auto_farm()
                         while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
                             if bp and hrp then
                                 bp.Position = hrp.Position + Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
+                                -- SEMI-GODMODE ENQUANTO FUGE
+                                hum.Health = hum.MaxHealth 
                             end
                             task.wait(0.5)
                         end
@@ -409,7 +411,7 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (UNDERGROUND E SEGURAR E)
+-- AUTO OPEN DOOR (NOCLIP + UNDERGROUND PROFUNDO + GODMODE)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local door_interact_time = 0
@@ -423,6 +425,10 @@ local function start_auto_open_door()
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                 if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     LocalPlayer.Character.HumanoidRootPart.Anchored = false
+                    -- Restaura colisão
+                    for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
+                        if p:IsA("BasePart") then p.CanCollide = true end
+                    end
                 end
                 Camera.CameraType = original_cam_type
             end
@@ -454,16 +460,25 @@ local function start_auto_open_door()
         if door_state == "WALKING" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then door_state = "IDLE" return end
             
+            -- NOCLIP ENQUANTO ANDA
+            if cfg.door_noclip then
+                for _, p in ipairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+            end
+            
             local door_pos = target_door_part.Position
             local dist = (hrp.Position - door_pos).Magnitude
             
             if dist > 6 then
                 local move_dir = (door_pos - hrp.Position).Unit
+                -- Se bater, sobe um pouco pra não travar em quinas
                 local rayParams = RaycastParams.new()
                 rayParams.FilterType = Enum.RaycastFilterType.Exclude
                 rayParams.FilterDescendantsInstances = {char, target_door_model}
                 local ray = Workspace:Raycast(hrp.Position, move_dir * 8, rayParams)
-                if ray then move_dir = Vector3.new(move_dir.X, 0.5, move_dir.Z).Unit end
+                if ray then move_dir = Vector3.new(move_dir.X, 0.3, move_dir.Z).Unit end
+                
                 hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
                 door_state = "OPENING"
@@ -477,10 +492,12 @@ local function start_auto_open_door()
                 
                 Camera.CameraType = Enum.CameraType.Scriptable
                 
-                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 8, target_door_part.Position.Z)
+                -- AFUNDA 20 STUDS (BEM FUNDO)
+                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 20, target_door_part.Position.Z)
                 hrp.CFrame = underground_pos
                 
-                local cam_pos = underground_pos.Position + Vector3.new(0, 6, 0)
+                -- Camera 8 studs acima olhando pra porta
+                local cam_pos = underground_pos.Position + Vector3.new(0, 8, 0)
                 Camera.CFrame = CFrame.lookAt(cam_pos, target_door_part.Position + Vector3.new(0, 1, 0))
                 
                 VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -488,20 +505,29 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
+            -- TRAVA A VIDA NO MÁXIMO (GODMODE)
+            hum.Health = hum.MaxHealth
+            
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                 hrp.Anchored = false
                 hum.WalkSpeed = 16
                 Camera.CameraType = original_cam_type
+                
+                -- Restaura colisão
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+                
                 door_state = "IDLE"
                 task.wait(0.5)
                 return
             end
             
             if target_door_part then
-                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 8, target_door_part.Position.Z)
+                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 20, target_door_part.Position.Z)
                 hrp.CFrame = underground_pos
-                Camera.CFrame = CFrame.lookAt(underground_pos.Position + Vector3.new(0, 6, 0), target_door_part.Position + Vector3.new(0, 1, 0))
+                Camera.CFrame = CFrame.lookAt(underground_pos.Position + Vector3.new(0, 8, 0), target_door_part.Position + Vector3.new(0, 1, 0))
             end
         end
     end)
@@ -555,10 +581,11 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP + Fuga)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP + Godmode)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Underground)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Noclip + Godmode)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
