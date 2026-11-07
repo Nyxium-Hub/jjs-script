@@ -1,13 +1,13 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR 30 STUDS FRENTE)
+-- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR CORRIGIDO)
 -- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
 local door_interact_time = 0
 local is_holding_e = false
-local door_target_y = nil
 local door_fly_y = nil
+local door_just_opened_time = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -52,6 +52,7 @@ local function start_auto_open_door()
         end
         if #cached_doors == 0 then return end
 
+        -- Procura a próxima porta destrancada (sempre)
         local closest_door, min_dist = nil, math.huge
         local closest_part = nil
         local any_unlocked = false
@@ -74,29 +75,46 @@ local function start_auto_open_door()
             end
         end
 
-        -- IDLE/WAITING: sobe 300 e fica no ar
+        -- IDLE / ESPERA
         if door_state == "IDLE" or door_state == "WAITING" then
             hum.PlatformStand = true
+            hum.WalkSpeed = 0
             if door_state == "IDLE" then
                 door_state = "WAITING"
                 door_fly_y = hrp.Position.Y + 300
             end
+
             if any_unlocked and closest_door then
                 target_door_model = closest_door
                 target_door_part = closest_part
-                door_state = "VOANDO"
+                door_state = "SUBINDO_POS_PORTA"
+                door_fly_y = hrp.Position.Y + 200
             else
+                -- Fica subindo/mantendo os 300
                 local current_y = hrp.Position.Y
-                if current_y < door_fly_y - 5 then
-                    hrp.CFrame = CFrame.new(hrp.Position.X, current_y + 6, hrp.Position.Z)
+                if current_y < door_fly_y - 3 then
+                    hrp.CFrame = CFrame.new(hrp.Position.X, current_y + 4, hrp.Position.Z)
                 else
                     hrp.CFrame = CFrame.new(hrp.Position.X, door_fly_y, hrp.Position.Z)
                 end
             end
         end
 
-        -- VOANDO: voa por cima da porta (mesmo X/Z)
+        -- SUBINDO_POS_PORTA: sobe 200 depois de abrir porta
+        if door_state == "SUBINDO_POS_PORTA" then
+            hum.PlatformStand = true
+            local current_y = hrp.Position.Y
+            if current_y < door_fly_y - 3 then
+                hrp.CFrame = CFrame.new(hrp.Position.X, current_y + 4, hrp.Position.Z)
+            else
+                hrp.CFrame = CFrame.new(hrp.Position.X, door_fly_y, hrp.Position.Z)
+                door_state = "VOANDO"
+            end
+        end
+
+        -- VOANDO: voa horizontal em cima da porta
         if door_state == "VOANDO" then
+            hum.PlatformStand = true
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "IDLE" return
             end
@@ -106,42 +124,38 @@ local function start_auto_open_door()
                 local move_dir = (door_xz - hrp.Position).Unit
                 hrp.CFrame = hrp.CFrame + (move_dir * 200 * dt)
             else
-                -- Chegou em cima, agora desce 30 studs NA FRENTE da porta
-                local look = target_door_part.CFrame.LookVector
-                local front_pos = target_door_part.Position + (look * 30)
-                door_target_y = front_pos.Y + 2
                 door_state = "DESCENDO_FRENTE"
             end
         end
 
-        -- DESCENDO_FRENTE: desce 30 studs à frente da porta
+        -- DESCENDO_FRENTE: desce 30 studs na frente da porta
         if door_state == "DESCENDO_FRENTE" then
+            hum.PlatformStand = true
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "IDLE" return
             end
             local look = target_door_part.CFrame.LookVector
             local front_pos = target_door_part.Position + (look * 30)
             local current_y = hrp.Position.Y
-            if current_y > front_pos.Y + 2 then
-                -- Desce em direção ao ponto 30 studs na frente da porta
+            if current_y > front_pos.Y + 3 then
                 hrp.CFrame = CFrame.new(front_pos.X, current_y - 6, front_pos.Z)
             else
-                -- Chegou no chão, vai em direção à porta
                 door_state = "ANDANDO_PORTA"
             end
         end
 
-        -- ANDANDO_PORTA: anda os 30 studs até a porta
+        -- ANDANDO_PORTA: anda até a porta
         if door_state == "ANDANDO_PORTA" then
+            hum.PlatformStand = false
+            hum.WalkSpeed = 16
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "IDLE" return
             end
-            hum.PlatformStand = false
             local target_pos = target_door_part.Position
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 4 then
                 local move_dir = (target_pos - hrp.Position).Unit
-                hrp.CFrame = hrp.CFrame + (move_dir * 80 * dt)
+                hrp.CFrame = hrp.CFrame + (move_dir * 100 * dt)
             else
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
@@ -154,7 +168,7 @@ local function start_auto_open_door()
             end
         end
 
-        -- OPENING: segura E por 6s
+        -- OPENING: segura E por 6s, depois sobe 200 e vai pra próxima
         if door_state == "OPENING" then
             if hum.Health <= 0 then
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
@@ -165,10 +179,12 @@ local function start_auto_open_door()
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
-                hum.PlatformStand = false
+                hum.PlatformStand = true
                 hum.WalkSpeed = 16
-                door_state = "IDLE"
-                task.wait(0.5)
+                -- Sobe 200 e vai pra próxima porta
+                door_state = "WAITING"
+                door_fly_y = hrp.Position.Y + 300
+                task.wait(0.3)
             end
         end
     end)
