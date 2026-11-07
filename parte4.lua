@@ -1,8 +1,8 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 4 - SEM COMBAT)
+-- NYXIUM HUB - JJS HALLOWEEN (PARTE 4 - INTERFACE)
 -- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
+local Window = WindUI:CreateWindow({ Title = "Nyxium | JJS Halloween", Author = "by miteu xz", Folder = "NyxiumJJS", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
 
 local function notify(title, text)
     if WindUI and WindUI.Notify then
@@ -10,7 +10,6 @@ local function notify(title, text)
     end
 end
 
--- BOTÃO PRETO FLUTUANTE
 local gui = Instance.new("ScreenGui")
 gui.Name = "NyxiumFloat"
 gui.ResetOnSpawn = false
@@ -31,36 +30,26 @@ floatingBtn.Parent = gui
 local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 10); c1.Parent = floatingBtn
 local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(80, 80, 80); stroke.Thickness = 2; stroke.Parent = floatingBtn
 
-local dragging = false
-local dragStart = nil
-local startPos = nil
-local hasDragged = false
-
+local dragging, dragStart, startPos, hasDragged = false, nil, nil, false
 floatingBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        hasDragged = false
+        dragging = true; hasDragged = false
         dragStart = input.Position
         startPos = floatingBtn.Position
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        if math.abs(delta.X) > 3 or math.abs(delta.Y) > 3 then
-            hasDragged = true
-        end
+        if math.abs(delta.X) > 3 or math.abs(delta.Y) > 3 then hasDragged = true end
         floatingBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
-
 floatingBtn.MouseButton1Click:Connect(function()
     if not hasDragged then
         pcall(function() Window:Toggle() end)
@@ -68,7 +57,7 @@ floatingBtn.MouseButton1Click:Connect(function()
     hasDragged = false
 end)
 
--- ABAS (SEM COMBAT)
+-- ABA MISC
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "crosshair" })
 MiscTab:Section({ Title = "Aimbot" })
 MiscTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(s) cfg.aim_enabled = s; notify("Aimbot", s and "Ativado" or "Desativado") end })
@@ -84,6 +73,7 @@ MiscTab:Slider({ Title = "Lock On Range", Value = { Min = 5, Max = 50, Default =
 MiscTab:Section({ Title = "Auto Regen" })
 MiscTab:Toggle({ Title = "Auto Regen (R)", Default = false, Callback = function(s) cfg.auto_regen = s; notify("Auto Regen", s and "Ativado" or "Desativado") end })
 
+-- ABA PLAYER
 local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
 PlayerTab:Section({ Title = "Speed Bypass" })
 PlayerTab:Toggle({ Title = "Enable Speed", Default = false, Callback = function(s) cfg.speed_bypass = s; notify("Speed Bypass", s and "Ativado" or "Desativado") end })
@@ -99,14 +89,14 @@ PlayerTab:Toggle({ Title = "Enable Jump", Default = false, Callback = function(s
 PlayerTab:Slider({ Title = "Jump Value", Value = { Min = 50, Max = 250, Default = 50 }, Callback = function(v) cfg.jump_power_val = v end })
 PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(s) cfg.inf_jump = s; notify("Infinite Jump", s and "Ativado" or "Desativado") end })
 
+-- ABA FARM (Com seções separadas)
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
+FarmTab:Section({ Title = "Farm Halloween" })
+FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s; notify("Auto Door", s and "Ativado" or "Desativado") end })
 FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s; notify("Auto Pumpkin", s and "Ativado" or "Desativado") end })
-FarmTab:Section({ Title = "Halloween Door Farm" })
-FarmTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s; notify("ESP Door", s and "Ativado" or "Desativado") end })
-FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s; notify("Auto Door", s and "Ativado" or "Desativado") end })
-FarmTab:Toggle({ Title = "Door Noclip", Default = true, Callback = function(s) cfg.door_noclip = s; notify("Door Noclip", s and "Ativado" or "Desativado") end })
 
+-- ABA VISUALS (com Halloween Door aqui)
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
 VisTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(s) cfg.esp_enabled = s; notify("ESP", s and "Ativado" or "Desativado") end })
@@ -118,3 +108,5 @@ VisTab:Toggle({ Title = "Lines", Default = false, Callback = function(s) cfg.esp
 VisTab:Toggle({ Title = "Nome", Default = false, Callback = function(s) cfg.esp_name = s end })
 VisTab:Toggle({ Title = "Distância", Default = false, Callback = function(s) cfg.esp_distance = s end })
 VisTab:Toggle({ Title = "Barra de Vida", Default = false, Callback = function(s) cfg.esp_health_bar = s end })
+VisTab:Section({ Title = "Halloween Door ESP" })
+VisTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s; notify("ESP Door", s and "Ativado" or "Desativado") end })
