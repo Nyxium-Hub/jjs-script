@@ -323,8 +323,10 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- AUTO FARM PUMPKIN (TP DIRETO)
+-- AUTO FARM PUMPKIN (TP WALK)
 local farm_state = "IDLE"
+local farm_target = nil
+
 local function has_pumpkin(plr)
     local char = plr.Character
     if not char then return false end
@@ -336,59 +338,70 @@ local function has_pumpkin(plr)
 end
 
 local function start_auto_farm()
-    RunService.Heartbeat:Connect(function()
+    RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
             if farm_state == "SAFE" then local hum = get_hum() if hum then hum.PlatformStand = false end farm_state = "IDLE" end
             return
         end
-        if farm_state ~= "IDLE" then return end
         
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
         if has_pumpkin(LocalPlayer) then
-            farm_state = "SAFE"
-            hum.PlatformStand = true
-            local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = my_hrp.Position + Vector3.new(0, 300, 0); bp.Parent = my_hrp
-            task.spawn(function()
-                while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
-                    local current_hrp = get_hrp()
-                    if current_hrp and bp then bp.Position = Vector3.new(current_hrp.Position.X, current_hrp.Position.Y + 10, current_hrp.Position.Z) else break end
-                    task.wait(0.5)
-                end
-                if bp then bp:Destroy() end
-                if hum then hum.PlatformStand = false end
-                farm_state = "IDLE"
-            end)
+            if farm_state ~= "SAFE" then
+                farm_state = "SAFE"
+                hum.PlatformStand = true
+                local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = my_hrp.Position + Vector3.new(0, 300, 0); bp.Parent = my_hrp
+                task.spawn(function()
+                    while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
+                        local current_hrp = get_hrp()
+                        if current_hrp and bp then bp.Position = Vector3.new(current_hrp.Position.X, current_hrp.Position.Y + 10, current_hrp.Position.Z) else break end
+                        task.wait(0.5)
+                    end
+                    if bp then bp:Destroy() end
+                    if hum then hum.PlatformStand = false end
+                    farm_state = "IDLE"
+                end)
+            end
             return
+        else
+            if farm_state == "SAFE" then hum.PlatformStand = false; farm_state = "IDLE" end
         end
 
-        local target = nil
-        for _, plr in ipairs(Players:GetPlayers()) do if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end end
-        if not target then return end
-
-        farm_state = "MOVING"
-        task.spawn(function()
-            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        if farm_state == "IDLE" then
+            farm_target = nil
+            for _, plr in ipairs(Players:GetPlayers()) do if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then farm_target = plr break end end
+            if farm_target then farm_state = "WALKING" end
+        elseif farm_state == "WALKING" then
+            if not farm_target or not farm_target.Character or not is_alive(farm_target) then farm_state = "IDLE" return end
+            local target_hrp = farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp then farm_state = "IDLE" return end
-            my_hrp.CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)
-            task.wait(0.1)
-            farm_state = "ATTACKING"
-            local end_time = tick() + 2
-            while tick() < end_time and cfg.auto_farm_pumpkin do
-                if not target.Character then break end
-                pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                task.wait(0.1)
+            
+            local dist = (my_hrp.Position - target_hrp.Position).Magnitude
+            if dist > 5 then
+                local move_dir = (target_hrp.Position - my_hrp.Position).Unit
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt) -- TP Walk rápido (150 studs/s)
+            else
+                farm_state = "ATTACKING"
+                task.spawn(function()
+                    local end_time = tick() + 2
+                    while tick() < end_time and cfg.auto_farm_pumpkin do
+                        if not farm_target.Character then break end
+                        pcall(function() VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0); task.wait(0.05); VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0) end)
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                        task.wait(0.1)
+                    end
+                    farm_state = "IDLE"
+                end)
             end
-            farm_state = "IDLE"
-        end)
+        end
     end)
 end
 
--- AUTO OPEN DOOR (TP WALK)
+-- AUTO OPEN DOOR (TP WALK COM DESVIO DE OBSTÁCULOS)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
+local door_avoid_dir = 1 -- 1 para direita, -1 para esquerda
 
 local function open_door_routine(model, part)
     local hum = get_hum()
@@ -397,7 +410,6 @@ local function open_door_routine(model, part)
     local end_time = tick() + 6
     while tick() < end_time do
         if not cfg.auto_open_door then break end
-        -- Se a porta sumiu ou ficou invisível, consideramos aberta
         if not model:IsDescendantOf(Workspace) or (part and part.Transparency == 1) then break end
         
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -431,11 +443,7 @@ local function start_auto_open_door()
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
                         local dist = (hrp.Position - part.Position).Magnitude
-                        if dist < min_dist then
-                            min_dist = dist
-                            closest_door = door
-                            closest_part = part
-                        end
+                        if dist < min_dist then min_dist, closest_door, closest_part = dist, door, part end
                     end
                 end
             end
@@ -443,24 +451,33 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
+                door_avoid_dir = math.random(1, 2) == 1 and 1 or -1
             end
         end
 
         if door_state == "WALKING" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
-                door_state = "IDLE"
-                return
-            end
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then door_state = "IDLE" return end
 
             local dist = (hrp.Position - target_door_part.Position).Magnitude
             if dist > 4 then
                 local move_dir = (target_door_part.Position - hrp.Position).Unit
-                hrp.CFrame = hrp.CFrame + (move_dir * 120 * dt) -- TP Walk em 120 studs/seg
+                
+                -- DESVIO DE OBSTÁCULOS
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                rayParams.FilterDescendantsInstances = {char, target_door_model}
+                local ray = Workspace:Raycast(hrp.Position, move_dir * 6, rayParams)
+                
+                if ray then
+                    -- Bateu em algo, desvia para o lado (esquerda/direita)
+                    local right = move_dir:Cross(Vector3.new(0, 1, 0)).Unit
+                    move_dir = (move_dir + (right * door_avoid_dir * 1.5)).Unit
+                end
+                
+                hrp.CFrame = hrp.CFrame + (move_dir * 120 * dt) -- TP Walk
             else
                 door_state = "OPENING"
-                task.spawn(function()
-                    open_door_routine(target_door_model, target_door_part)
-                end)
+                task.spawn(function() open_door_routine(target_door_model, target_door_part) end)
             end
         end
     end)
@@ -514,10 +531,10 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (TP Walk)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Desvio de Obstáculos)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
