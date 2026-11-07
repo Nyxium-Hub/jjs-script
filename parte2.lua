@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FARM RÁPIDO)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FIX FLY VS AUTO DOOR)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -73,6 +73,13 @@ local function update_player_movement(dt)
     local hum = get_hum()
     if not char or not hrp or not hum then return end
 
+    -- SE O AUTO DOOR TÁ ATIVO, NÃO MEXE NO PERSONAGEM
+    local auto_door_active = cfg.auto_open_door and door_state ~= "IDLE" and door_state ~= "WAITING"
+    if auto_door_active then
+        if fly_vel then fly_vel:Destroy(); fly_vel = nil end
+        return
+    end
+
     if cfg.speed_bypass then
         hum.WalkSpeed = 16
         if hum.MoveDirection.Magnitude > 0 then
@@ -109,7 +116,9 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" then hum.PlatformStand = false end
+        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" and door_state ~= "SUBINDO_INICIAL" and door_state ~= "PROCURANDO" and door_state ~= "VOANDO" and door_state ~= "DESCENDO_ESQUERDA" then
+            hum.PlatformStand = false
+        end
     end
 end
 
