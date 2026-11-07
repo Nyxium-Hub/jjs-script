@@ -108,10 +108,10 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
+-- AUTO FARM PUMPKIN (SUAVIZADO COM BODYPOSITION)
 local farm_state = "IDLE"
-local flee_start_pos = nil
-local flee_target_pos = nil
-local flee_anchored = false
+local flee_bp = nil
+local flee_target = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -129,14 +129,11 @@ local function start_auto_farm()
         if not cfg.auto_farm_pumpkin then
             if farm_state == "FLEE" then 
                 local hum = get_hum() 
-                local hrp = get_hrp()
                 if hum then hum.PlatformStand = false end
-                if hrp then hrp.Anchored = false end
-                if flee_anchored then flee_anchored = false end
+                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
             end
             farm_state = "IDLE"
-            flee_start_pos = nil
-            flee_target_pos = nil
+            flee_target = nil
             return
         end
         
@@ -147,35 +144,24 @@ local function start_auto_farm()
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                my_hrp.Anchored = false
-                flee_anchored = false
-                flee_start_pos = my_hrp.Position
-                flee_target_pos = flee_start_pos + Vector3.new(0, 300, 0)
+                flee_target = my_hrp.Position + Vector3.new(0, 300, 0)
+                flee_bp = Instance.new("BodyPosition")
+                flee_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                flee_bp.P = 10000
+                flee_bp.D = 500
+                flee_bp.Position = flee_target
+                flee_bp.Parent = my_hrp
             end
-            
-            if farm_state == "FLEE" and not flee_anchored then
-                if flee_target_pos then
-                    local current_y = my_hrp.Position.Y
-                    local target_y = flee_target_pos.Y
-                    
-                    if current_y < target_y - 5 then
-                        my_hrp.CFrame = CFrame.new(flee_target_pos.X, current_y + 10, flee_target_pos.Z)
-                    else
-                        my_hrp.CFrame = CFrame.new(flee_target_pos.X, target_y, flee_target_pos.Z)
-                        my_hrp.Anchored = true
-                        flee_anchored = true
-                    end
-                end
+            if flee_bp then
+                flee_bp.Position = flee_target
             end
             return
         else
             if farm_state == "FLEE" then 
                 hum.PlatformStand = false
-                if my_hrp then my_hrp.Anchored = false end
+                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
                 farm_state = "IDLE"
-                flee_start_pos = nil
-                flee_target_pos = nil
-                flee_anchored = false
+                flee_target = nil
             end
         end
 
@@ -188,15 +174,14 @@ local function start_auto_farm()
             local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
             if target_hrp then
                 farm_state = "ATTACKING"
-                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
+                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.15, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
                 tween:Play()
                 
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-                    task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+                task.spawn(function()
+                    task.wait(0.3)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                    task.wait(0.3)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
                 end)
             end
         else
