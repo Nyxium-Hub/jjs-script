@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3)
+-- NYXIUM HUB - ITADORI (PARTE 3 - LÓGICA)
 -- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
@@ -7,10 +7,8 @@ local target_prompt = nil
 local door_interact_time = 0
 local walk_timer = 0
 local is_holding_e = false
-
-local wait_start_pos = nil
-local wait_target_pos = nil
-local wait_anchored = false
+local wait_bp = nil
+local wait_target = nil
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -34,32 +32,23 @@ end
 
 local function stop_waiting()
     local hum = get_hum()
-    local hrp = get_hrp()
     if hum then hum.PlatformStand = false end
-    if hrp and wait_anchored then hrp.Anchored = false end
-    wait_anchored = false
-    wait_start_pos = nil
-    wait_target_pos = nil
+    if wait_bp then wait_bp:Destroy(); wait_bp = nil end
+    wait_target = nil
 end
 
 local function get_navigation_dir(start_pos, target_pos, char, door_model)
-    if walk_timer > 2.5 then
-        return Vector3.new(0, 1, 0)
-    end
-    
+    if walk_timer > 2.5 then return Vector3.new(0, 1, 0) end
     local base_dir = (target_pos - start_pos).Unit
     local ray_params = RaycastParams.new()
     ray_params.FilterType = Enum.RaycastFilterType.Exclude
     ray_params.FilterDescendantsInstances = {char, door_model}
     ray_params.IgnoreWater = true
-    
     local angles = {0, 20, -20, 45, -45, 70, -70, 90, -90}
     for _, angle in ipairs(angles) do
         local rotated_dir = (CFrame.Angles(0, math.rad(angle), 0) * base_dir)
         local hit = Workspace:Raycast(start_pos, rotated_dir * 20, ray_params)
-        if not hit then
-            return rotated_dir
-        end
+        if not hit then return rotated_dir end
     end
     return base_dir
 end
@@ -123,9 +112,16 @@ local function start_auto_open_door()
                 walk_timer = 0
             else
                 door_state = "WAITING"
-                wait_start_pos = hrp.Position
-                wait_target_pos = wait_start_pos + Vector3.new(0, 300, 0)
-                wait_anchored = false
+                hum.PlatformStand = true
+                wait_target = hrp.Position + Vector3.new(0, 300, 0)
+                if not wait_bp then
+                    wait_bp = Instance.new("BodyPosition")
+                    wait_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    wait_bp.P = 10000
+                    wait_bp.D = 500
+                    wait_bp.Position = wait_target
+                    wait_bp.Parent = hrp
+                end
             end
         end
         
@@ -135,24 +131,10 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
-
-                door_state = "WALKING"
                 walk_timer = 0
             else
-                -- Sobe 300 studs e ancora
-                if not wait_anchored then
-                    if wait_target_pos then
-                        local current_y = hrp.Position.Y
-                        local target_y = wait_target_pos.Y
-                        
-                        if current_y < target_y - 5 then
-                            hrp.CFrame = CFrame.new(wait_target_pos.X, current_y + 10, wait_target_pos.Z)
-                        else
-                            hrp.CFrame = CFrame.new(wait_target_pos.X, target_y, wait_target_pos.Z)
-                            hrp.Anchored = true
-                            wait_anchored = true
-                        end
-                    end
+                if wait_bp then
+                    wait_bp.Position = wait_target
                 end
             end
         end
@@ -224,7 +206,7 @@ start_auto_open_door()
 start_esp()
 
 -- ============================================================
--- INTERFACE WIND UI
+-- NYXIUM HUB - ITADORI (PARTE 4 - INTERFACE)
 -- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
@@ -270,7 +252,7 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Grudado)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Suave)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
 FarmTab:Toggle({ Title = "Auto Open Door (Voo 300)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
