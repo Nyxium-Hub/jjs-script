@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - ANCORAGEM FORÇADA)
+-- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR FINAL)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -7,6 +7,8 @@ local target_prompt = nil
 local door_interact_time = 0
 local is_holding_e = false
 local fly_target_y = nil
+local wait_start = 0
+local last_combo_hit = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -28,13 +30,12 @@ local function check_if_locked(door)
     return false
 end
 
--- LOOP DE FORÇA DE ANCORAGEM (roda independente do Heartbeat)
 task.spawn(function()
     while task.wait(0.05) do
         if cfg.auto_open_door then
             local hrp = get_hrp()
             if hrp then
-                local is_flying = (door_state == "SUBINDO_INICIAL" or door_state == "PROCURANDO" or door_state == "VOANDO" or door_state == "DESCENDO_ATRAS")
+                local is_flying = (door_state == "SUBINDO_INICIAL" or door_state == "PROCURANDO" or door_state == "VOANDO" or door_state == "ESPERANDO" or door_state == "DESCENDO")
                 if is_flying then
                     hrp.Anchored = true
                     local hum = get_hum()
@@ -60,7 +61,10 @@ local function start_auto_open_door()
                 local hum = get_hum()
                 local hrp = get_hrp()
                 if hrp then hrp.Anchored = false end
-                if hum then hum.PlatformStand = false end
+                if hum then
+                    hum.PlatformStand = false
+                    hum.WalkSpeed = 16
+                end
                 fly_target_y = nil
             end
             return
@@ -74,10 +78,10 @@ local function start_auto_open_door()
         end
         if #cached_doors == 0 then return end
 
-        -- SUBINDO 200
+        -- FASE 1: SUBIR 300 E ESPERAR
         if door_state == "SUBINDO_INICIAL" then
             if not fly_target_y then
-                fly_target_y = hrp.Position.Y + 200
+                fly_target_y = hrp.Position.Y + 300
             end
             local current_y = hrp.Position.Y
             if current_y < fly_target_y - 3 then
@@ -89,7 +93,7 @@ local function start_auto_open_door()
             return
         end
 
-        -- PROCURANDO
+        -- FASE 2: PROCURAR PORTA DESTRANCADA
         if door_state == "PROCURANDO" then
             local closest_door, min_dist = nil, math.huge
             local closest_part = nil
@@ -117,35 +121,45 @@ local function start_auto_open_door()
             return
         end
 
-        -- VOANDO
+        -- FASE 3: VOAR A 250 STUDS ACIMA DO MAPA ATÉ EM CIMA DA PORTA
         if door_state == "VOANDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            local door_xz = Vector3.new(target_door_part.Position.X, hrp.Position.Y, target_door_part.Position.Z)
-            local dist_xz = (hrp.Position - door_xz).Magnitude
-            if dist_xz > 5 then
-                local move_dir = (door_xz - hrp.Position).Unit
-                hrp.CFrame = hrp.CFrame + (move_dir * 150 * dt)
+            -- 250 studs acima do mapa (não do meu personagem)
+            local target_y = target_door_part.Position.Y + 250
+            local target_xz = Vector3.new(target_door_part.Position.X, target_y, target_door_part.Position.Z)
+            local dir = target_xz - hrp.Position
+            local dist = dir.Magnitude
+            if dist > 5 then
+                hrp.CFrame = CFrame.new(hrp.Position + (dir.Unit * 150 * dt))
             else
-                door_state = "DESCENDO_ATRAS"
+                hrp.CFrame = CFrame.new(target_xz)
+                door_state = "ESPERANDO"
+                wait_start = tick()
             end
             return
         end
 
-        -- DESCENDO 25 STUDS ATRÁS
-        if door_state == "DESCENDO_ATRAS" then
+        -- FASE 4: ESPERAR 1 SEGUNDO EM CIMA DA PORTA
+        if door_state == "ESPERANDO" then
+            if tick() - wait_start >= 1 then
+                door_state = "DESCENDO"
+            end
+            return
+        end
+
+        -- FASE 5: DESCER 30 STUDS À FRENTE DA PORTA
+        if door_state == "DESCENDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
             end
-            local back_pos = target_door_part.Position - (target_door_part.CFrame.LookVector * 25)
-            local target_pos = Vector3.new(back_pos.X, target_door_part.Position.Y + 2, back_pos.Z)
-            local current_pos = hrp.Position
-            local direction = target_pos - current_pos
-            local dist = direction.Magnitude
+            local front_pos = target_door_part.Position + (target_door_part.CFrame.LookVector * 30)
+            local target_pos = Vector3.new(front_pos.X, target_door_part.Position.Y + 2, front_pos.Z)
+            local dir = target_pos - hrp.Position
+            local dist = dir.Magnitude
             if dist > 3 then
-                local move_dir = direction.Unit
-                hrp.CFrame = CFrame.new(current_pos + (move_dir * 120 * dt))
+                hrp.CFrame = CFrame.new(hrp.Position + (dir.Unit * 120 * dt))
             else
                 door_state = "ANDANDO_PORTA"
                 hrp.Anchored = false
@@ -155,7 +169,7 @@ local function start_auto_open_door()
             return
         end
 
-        -- ANDANDO ATÉ A PORTA
+        -- FASE 6: ANDAR ATÉ A PORTA
         if door_state == "ANDANDO_PORTA" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
@@ -166,11 +180,11 @@ local function start_auto_open_door()
             end
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 3 then
-                local move_dir = (target_pos - hrp.Position).Unit
-                hrp.CFrame = hrp.CFrame + (move_dir * 80 * dt)
+                hrp.CFrame = hrp.CFrame + ((target_pos - hrp.Position).Unit * 80 * dt)
             else
                 door_state = "OPENING"
                 door_interact_time = tick()
+                last_combo_hit = 0
                 if not is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -180,17 +194,35 @@ local function start_auto_open_door()
             return
         end
 
-        -- OPENING
+        -- FASE 7: SEGURAR E E ATACAR 1,2,3,4 ENQUANTO INTERAGE
         if door_state == "OPENING" then
             if hum.Health <= 0 then
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             end
-            if target_door_part then hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0)) end
+            if target_door_part then
+                hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
+            end
+            -- Atacar 1,2,3,4 enquanto segura E (sem soltar E)
+            if tick() - last_combo_hit > 0.6 then
+                last_combo_hit = tick()
+                task.spawn(function()
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end)
+                    task.wait(0.05)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
+                    task.wait(0.05)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                    task.wait(0.05)
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game); task.wait(0.03); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end)
+                end)
+            end
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 if is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
+                hrp.Anchored = false
+                hum.PlatformStand = false
+                hum.WalkSpeed = 16
                 door_state = "SUBINDO_INICIAL"
                 fly_target_y = nil
             end
