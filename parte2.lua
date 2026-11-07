@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FARM BODYPOSITION)
+-- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -75,6 +75,7 @@ local function update_player_movement(dt)
 
     if cfg.auto_farm_pumpkin and (farm_state == "FLEE" or farm_state == "FLYING") then
         if fly_vel then fly_vel:Destroy(); fly_vel = nil end
+        hrp.CanCollide = true
         return
     end
 
@@ -88,12 +89,20 @@ local function update_player_movement(dt)
     end
 
     if cfg.noclip_bypass then
-        for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+        for _, p in ipairs(char:GetDescendants()) do 
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then 
+                p.CanCollide = false 
+            end 
+        end
         if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
     else
-        for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end end
-        hrp.CanCollide = true
+        for _, p in ipairs(char:GetDescendants()) do 
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then 
+                p.CanCollide = true 
+            end 
+        end
     end
+    hrp.CanCollide = true
 
     if cfg.jump_power_enabled then hum.UseJumpPower = true; hum.JumpPower = cfg.jump_power_val end
 
@@ -119,7 +128,7 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM COM BODYPOSITION (NÃO CAI)
+-- FARM COM BODYPOSITION FORTE
 local farm_state = "IDLE"
 local farm_bp = nil
 local farm_target = nil
@@ -143,10 +152,11 @@ end
 
 local function create_bp(hrp, y)
     if farm_bp then farm_bp:Destroy() end
+    hrp.CanCollide = true
     farm_bp = Instance.new("BodyPosition")
-    farm_bp.MaxForce = Vector3.new(0, math.huge, 0)
-    farm_bp.P = 50000
-    farm_bp.D = 2000
+    farm_bp.MaxForce = Vector3.new(0, 1000000, 0)
+    farm_bp.P = 100000
+    farm_bp.D = 5000
     farm_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
     farm_bp.Parent = hrp
 end
@@ -170,11 +180,9 @@ local function start_auto_farm()
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- SE PEGOU PUMPKIN: sobe 300 e fica lá com BodyPosition
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
-                hum.PlatformStand = true
                 farm_fly_y = my_hrp.Position.Y + 300
                 create_bp(my_hrp, farm_fly_y)
             end
@@ -191,7 +199,6 @@ local function start_auto_farm()
             end
         end
 
-        -- PROCURA ALVO
         if farm_state == "IDLE" then
             local target = nil
             for _, plr in ipairs(Players:GetPlayers()) do
@@ -200,14 +207,12 @@ local function start_auto_farm()
             if target then
                 farm_target = target
                 farm_state = "FLYING"
-                hum.PlatformStand = true
                 farm_fly_y = my_hrp.Position.Y + 200
                 create_bp(my_hrp, farm_fly_y)
             end
             return
         end
 
-        -- FLYING: voa em direção ao alvo em 200
         if farm_state == "FLYING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil remove_bp() return end
@@ -222,12 +227,10 @@ local function start_auto_farm()
             else
                 farm_state = "ATTACKING"
                 remove_bp()
-                hum.PlatformStand = false
             end
             return
         end
 
-        -- ATTACKING: cola e bate
         if farm_state == "ATTACKING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
