@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FIX FLY VS AUTO DOOR)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM FIXO NO AR)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -73,9 +73,14 @@ local function update_player_movement(dt)
     local hum = get_hum()
     if not char or not hrp or not hum then return end
 
-    -- SE O AUTO DOOR TÁ ATIVO, NÃO MEXE NO PERSONAGEM
-    local auto_door_active = cfg.auto_open_door and door_state ~= "IDLE" and door_state ~= "WAITING"
-    if auto_door_active then
+    -- Se o auto farm tiver em voo, NÃO MEXE NO PERSONAGEM
+    if cfg.auto_farm_pumpkin and (farm_state == "FLEE" or farm_state == "FLYING" or farm_state == "SUBINDO") then
+        if fly_vel then fly_vel:Destroy(); fly_vel = nil end
+        return
+    end
+
+    -- Se o auto door estiver ativo, NÃO MEXE NO PERSONAGEM
+    if cfg.auto_open_door and door_state ~= "IDLE" and door_state ~= "WAITING" then
         if fly_vel then fly_vel:Destroy(); fly_vel = nil end
         return
     end
@@ -116,15 +121,12 @@ local function update_player_movement(dt)
         fly_vel.Velocity = dir * cfg.fly_speed
     else
         if fly_vel then fly_vel:Destroy() fly_vel = nil end
-        if hum.PlatformStand and not cfg.auto_farm_pumpkin and door_state ~= "WAITING" and door_state ~= "OPENING" and door_state ~= "SUBINDO_INICIAL" and door_state ~= "PROCURANDO" and door_state ~= "VOANDO" and door_state ~= "DESCENDO_ESQUERDA" then
-            hum.PlatformStand = false
-        end
     end
 end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM RÁPIDO
+-- FARM FIXO NO AR
 local farm_state = "IDLE"
 local flee_target_y = nil
 local farm_last_hit = 0
@@ -140,12 +142,31 @@ local function has_pumpkin(plr)
     return false
 end
 
+-- Loop de ancoragem forçada do farm
+task.spawn(function()
+    while task.wait(0.05) do
+        if cfg.auto_farm_pumpkin then
+            local hrp = get_hrp()
+            if hrp and (farm_state == "FLEE" or farm_state == "FLYING" or farm_state == "SUBINDO") then
+                hrp.Anchored = true
+                local hum = get_hum()
+                if hum then
+                    hum.PlatformStand = true
+                    hum.WalkSpeed = 0
+                end
+            end
+        end
+    end
+end)
+
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" then
+            if farm_state == "FLEE" or farm_state == "FLYING" or farm_state == "SUBINDO" then
                 local hum = get_hum()
+                local hrp = get_hrp()
                 if hum then hum.PlatformStand = false end
+                if hrp then hrp.Anchored = false end
             end
             farm_state = "IDLE"
             flee_target_y = nil
@@ -159,12 +180,12 @@ local function start_auto_farm()
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
+                my_hrp.Anchored = true
                 flee_target_y = my_hrp.Position.Y + 300
             end
-
             if flee_target_y then
                 local current_y = my_hrp.Position.Y
-                if current_y < flee_target_y - 5 then
+                if current_y < flee_target_y - 3 then
                     my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 6, my_hrp.Position.Z)
                 else
                     my_hrp.CFrame = CFrame.new(my_hrp.Position.X, flee_target_y, my_hrp.Position.Z)
@@ -174,6 +195,7 @@ local function start_auto_farm()
         else
             if farm_state == "FLEE" then
                 hum.PlatformStand = false
+                my_hrp.Anchored = false
                 farm_state = "IDLE"
                 flee_target_y = nil
             end
@@ -187,15 +209,38 @@ local function start_auto_farm()
         if target then
             local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
             if target_hrp then
-                farm_state = "ATTACKING"
-                my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
-                if tick() - farm_last_hit > 0.4 then
-                    farm_last_hit = tick()
-                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                if farm_state ~= "FLYING" then
+                    farm_state = "FLYING"
+                    hum.PlatformStand = true
+                    my_hrp.Anchored = true
+                    flee_target_y = my_hrp.Position.Y + 200
+                end
+                if flee_target_y then
+                    local current_y = my_hrp.Position.Y
+                    if current_y < flee_target_y - 3 then
+                        my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 6, my_hrp.Position.Z)
+                    else
+                        my_hrp.CFrame = CFrame.new(my_hrp.Position.X, flee_target_y, my_hrp.Position.Z)
+                        farm_state = "ATTACKING"
+                        my_hrp.Anchored = false
+                        hum.PlatformStand = false
+                    end
                 end
             end
         else
-            farm_state = "IDLE"
+            if farm_state == "ATTACKING" then
+                farm_state = "IDLE"
+            end
+        end
+
+        if farm_state == "ATTACKING" and target then
+            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if not target_hrp or not is_alive(target) then farm_state = "IDLE" return end
+            my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
+            if tick() - farm_last_hit > 0.4 then
+                farm_last_hit = tick()
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+            end
         end
     end)
 end
