@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 4 - INTERFACE + NOTIFY + FLOAT)
+-- NYXIUM HUB - ITADORI (PARTE 4 - SEM COMBAT)
 -- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
@@ -10,7 +10,7 @@ local function notify(title, text)
     end
 end
 
--- BOTÃO FLUTUANTE ARRASTÁVEL
+-- BOTÃO PRETO FLUTUANTE
 local gui = Instance.new("ScreenGui")
 gui.Name = "NyxiumFloat"
 gui.ResetOnSpawn = false
@@ -20,50 +20,55 @@ gui.Parent = game:GetService("CoreGui")
 local floatingBtn = Instance.new("TextButton")
 floatingBtn.Size = UDim2.fromOffset(44, 44)
 floatingBtn.Position = UDim2.new(0, 20, 0, 100)
-floatingBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 220)
+floatingBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 floatingBtn.Text = "N"
 floatingBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 floatingBtn.Font = Enum.Font.GothamBold
 floatingBtn.TextSize = 20
 floatingBtn.BorderSizePixel = 0
+floatingBtn.AutoButtonColor = false
 floatingBtn.Parent = gui
 local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 10); c1.Parent = floatingBtn
-local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(180, 140, 255); stroke.Thickness = 2; stroke.Parent = floatingBtn
+local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(80, 80, 80); stroke.Thickness = 2; stroke.Parent = floatingBtn
 
-local dragging, dragStart, startPos = false, nil, nil
+local dragging = false
+local dragStart = nil
+local startPos = nil
+local hasDragged = false
+
 floatingBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
+        hasDragged = false
         dragStart = input.Position
         startPos = floatingBtn.Position
     end
 end)
-game:GetService("UserInputService").InputChanged:Connect(function(input)
+
+UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
+        if math.abs(delta.X) > 3 or math.abs(delta.Y) > 3 then
+            hasDragged = true
+        end
         floatingBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
-game:GetService("UserInputService").InputEnded:Connect(function(input)
+
+UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
 
 floatingBtn.MouseButton1Click:Connect(function()
-    if not dragging then
+    if not hasDragged then
         pcall(function() Window:Toggle() end)
     end
+    hasDragged = false
 end)
 
--- ABAS
-local Tab = Window:Tab({ Title = "Combat", Icon = "swords" })
-Tab:Section({ Title = "Auto Black Flash" })
-Tab:Toggle({ Title = "Auto Black Flash", Default = false, Callback = function(s) cfg.auto_black_flash = s; notify("Auto Black Flash", s and "Ativado" or "Desativado") end })
-Tab:Section({ Title = "Auto Block" })
-Tab:Toggle({ Title = "Auto Block", Default = false, Callback = function(s) cfg.auto_block = s; notify("Auto Block", s and "Ativado" or "Desativado") end })
-Tab:Slider({ Title = "Block Range", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.block_range = v end })
-
+-- ABAS (SEM COMBAT)
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "crosshair" })
 MiscTab:Section({ Title = "Aimbot" })
 MiscTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(s) cfg.aim_enabled = s; notify("Aimbot", s and "Ativado" or "Desativado") end })
