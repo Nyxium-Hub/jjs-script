@@ -400,7 +400,7 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (FARM UNDERGROUND CORRIGIDO)
+-- AUTO OPEN DOOR (UNDERGROUND E SEGURAR E)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local door_interact_time = 0
@@ -461,12 +461,24 @@ local function start_auto_open_door()
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
                 
-                -- Desliga a colisão e ancora pra baixo
+                -- UNDERGROUND: Ancora, desliga colisão e afunda
                 hrp.Anchored = true
-                hrp.CanCollide = false
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
                 
-                -- Muda a câmera pra não bugar
                 Camera.CameraType = Enum.CameraType.Scriptable
+                
+                -- Joga o corpo 8 studs pra baixo
+                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 8, target_door_part.Position.Z)
+                hrp.CFrame = underground_pos
+                
+                -- Câmera 6 studs acima olhando pra porta
+                local cam_pos = underground_pos.Position + Vector3.new(0, 6, 0)
+                Camera.CFrame = CFrame.lookAt(cam_pos, target_door_part.Position + Vector3.new(0, 1, 0))
+                
+                -- Segura o E UMA VEZ (sem spam)
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
             end
         end
 
@@ -476,7 +488,6 @@ local function start_auto_open_door()
                 -- Finaliza
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                 hrp.Anchored = false
-                hrp.CanCollide = true
                 hum.WalkSpeed = 16
                 Camera.CameraType = original_cam_type
                 door_state = "IDLE"
@@ -484,20 +495,12 @@ local function start_auto_open_door()
                 return
             end
             
-            -- Posiciona o boneco embaixo da terra e a câmera olhando pra porta
+            -- Mantém a posição e a câmera travadas (caso o jogo tente puxar)
             if target_door_part then
-                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 3, target_door_part.Position.Z)
+                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 8, target_door_part.Position.Z)
                 hrp.CFrame = underground_pos
-                
-                -- Camera fica 6 studs acima do HRP, olhando pra porta
-                local cam_pos = underground_pos.Position + Vector3.new(0, 6, 0)
-                Camera.CFrame = CFrame.lookAt(cam_pos, target_door_part.Position + Vector3.new(0, 1, 0))
+                Camera.CFrame = CFrame.lookAt(underground_pos.Position + Vector3.new(0, 6, 0), target_door_part.Position + Vector3.new(0, 1, 0))
             end
-            
-            -- Segura o E
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-            task.wait(0.2)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
         end
     end)
 end
