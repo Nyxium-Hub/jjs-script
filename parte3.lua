@@ -1,6 +1,3 @@
--- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3)
--- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
@@ -29,7 +26,7 @@ end
 local function stop_waiting()
     local hum = get_hum()
     if hum then hum.PlatformStand = false end
-    if wait_bp then wait_bp:Destroy(); wait_bp = nil end
+    if wait_bp then wait_bp:Destroy() wait_bp = nil end
     wait_target = nil
 end
 
@@ -38,9 +35,10 @@ local function start_auto_open_door()
         if not cfg.auto_open_door then
             if door_state ~= "IDLE" then
                 door_state = "IDLE"
-                if is_holding_e then 
+                if is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    is_holding_e = false
                 end
                 stop_waiting()
             end
@@ -49,7 +47,7 @@ local function start_auto_open_door()
         local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not hrp or not hum then stop_waiting() return end
         if hum.Health <= 0 then
-            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game) task.wait(0.1) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             return
         end
         if #cached_doors == 0 then stop_waiting() return end
@@ -63,7 +61,7 @@ local function start_auto_open_door()
                     local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
                     if part then
                         local dist = (hrp.Position - part.Position).Magnitude
-                        if dist < min_dist then 
+                        if dist < min_dist then
                             min_dist = dist
                             closest_door = door
                             closest_part = part
@@ -102,8 +100,9 @@ local function start_auto_open_door()
             end
         end
         if door_state == "WALKING" then
-            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then 
-                door_state = "IDLE" return 
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then
+                door_state = "IDLE"
+                return
             end
             if cfg.door_noclip then
                 for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
@@ -128,13 +127,14 @@ local function start_auto_open_door()
         end
         if door_state == "OPENING" then
             if hum.Health <= 0 then
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game) task.wait(0.1) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             end
             if target_door_part then hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0)) end
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
-                if is_holding_e then 
+                if is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    is_holding_e = false
                 end
                 hum.PlatformStand = false
                 hum.WalkSpeed = 16
