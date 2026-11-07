@@ -125,6 +125,10 @@ end
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
+            if farm_state == "FLEE" then 
+                local hum = get_hum() 
+                if hum then hum.PlatformStand = false end
+            end
             farm_state = "IDLE"
             farm_target = nil
             farm_fly_pos = nil
@@ -134,17 +138,18 @@ local function start_auto_farm()
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
-        -- Se já é o Pumpkin, sobe 300 e espera
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
                 farm_fly_pos = my_hrp.Position + Vector3.new(0, 300, 0)
             end
-            my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
+            if farm_fly_pos then
+                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
+            end
             return
         else
-            if farm_state == "FLEE" then
+            if farm_state == "FLEE" then 
                 hum.PlatformStand = false
                 farm_state = "IDLE"
                 farm_fly_pos = nil
@@ -168,10 +173,10 @@ local function start_auto_farm()
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
             
-            -- Sobe até 200 studs
-            my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
+            if farm_fly_pos then
+                my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
+            end
             
-            -- Voa em direção ao alvo no eixo X e Z
             local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
             local dist_xz = (my_hrp.Position - target_xz).Magnitude
             
@@ -179,11 +184,10 @@ local function start_auto_farm()
                 local move_dir = (target_xz - my_hrp.Position).Unit
                 my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt)
             else
-                -- Chegou em cima, desce e ataca
                 farm_state = "ATTACKING"
                 task.spawn(function()
-                    local descend_time = tick() + 2
-                    while tick() < descend_time do
+                    local end_time = tick() + 2
+                    while tick() < end_time and cfg.auto_farm_pumpkin do
                         if not farm_target or not farm_target.Character then break end
                         local th = farm_target.Character:FindFirstChild("HumanoidRootPart")
                         if th then
