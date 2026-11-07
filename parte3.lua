@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR CORRIGIDO)
+-- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR COM RESET FORÇADO)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -29,6 +29,35 @@ local function check_if_locked(door)
     return false
 end
 
+-- RESET TOTAL DO PERSONAGEM
+local function reset_character()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hrp then hrp.Anchored = false end
+    if hum then
+        hum.PlatformStand = false
+        hum.WalkSpeed = 16
+        hum.JumpPower = 50
+    end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then p.CanCollide = true end
+    end
+end
+
+-- Se o fly_bypass for ativado, desliga o Auto Door
+task.spawn(function()
+    while task.wait(0.2) do
+        if cfg.fly_bypass and cfg.auto_open_door then
+            cfg.auto_open_door = false
+            door_state = "SUBINDO_INICIAL"
+            reset_character()
+        end
+    end
+end)
+
+-- Loop de ancoragem forçada
 task.spawn(function()
     while task.wait(0.05) do
         if cfg.auto_open_door then
@@ -57,13 +86,7 @@ local function start_auto_open_door()
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false
                 end
-                local hum = get_hum()
-                local hrp = get_hrp()
-                if hrp then hrp.Anchored = false end
-                if hum then
-                    hum.PlatformStand = false
-                    hum.WalkSpeed = 16
-                end
+                reset_character()
                 fly_target_y = nil
             end
             return
@@ -143,7 +166,6 @@ local function start_auto_open_door()
             return
         end
 
-        -- DESCE 50 STUDS À DIREITA DA PORTA
         if door_state == "DESCENDO" then
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) then
                 door_state = "PROCURANDO" return
@@ -186,7 +208,6 @@ local function start_auto_open_door()
             return
         end
 
-        -- OPENING: só segura E, sem atacar (sem travar tela)
         if door_state == "OPENING" then
             if hum.Health <= 0 then
                 pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
