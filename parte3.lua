@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - INTERAÇÃO FORTE)
+-- NYXIUM HUB - ITADORI (PARTE 3 - RESET DE INTERAÇÃO)
 -- ============================================================
 local door_state = "SUBINDO_INICIAL"
 local target_door_model, target_door_part = nil, nil
@@ -10,7 +10,6 @@ local door_bp = nil
 local door_target_y = nil
 local wait_start = 0
 local last_health = 100
-local interact_retry_cooldown = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -69,15 +68,6 @@ local function reset_interaction()
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
         is_holding_e = false
     end
-end
-
-local function try_interact(prompt)
-    if not prompt then return false end
-    reset_interaction()
-    local ok1 = pcall(function() prompt:InputHoldBegin() end)
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    is_holding_e = true
-    return ok1
 end
 
 local function start_auto_open_door()
@@ -209,7 +199,9 @@ local function start_auto_open_door()
                 door_state = "OPENING"
                 door_interact_time = tick()
                 if not is_holding_e then
-                    try_interact(target_prompt)
+                    if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    is_holding_e = true
                 end
             end
             return
