@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - SPEED + BLOCK + FARM)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM SUAVE)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -115,10 +115,9 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM COM SUBIDA DEVAGAR (SEM DETECTAR)
+-- FARM SUAVE (SUBE 2 STUDS POR FRAME)
 local farm_state = "IDLE"
 local flee_target_y = nil
-local flee_start_y = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -140,7 +139,6 @@ local function start_auto_farm()
             end
             farm_state = "IDLE"
             flee_target_y = nil
-            flee_start_y = nil
             return
         end
 
@@ -151,17 +149,14 @@ local function start_auto_farm()
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                flee_start_y = my_hrp.Position.Y
-                flee_target_y = flee_start_y + 300
+                flee_target_y = my_hrp.Position.Y + 300
             end
 
-            if flee_target_y and flee_start_y then
+            if flee_target_y then
                 local current_y = my_hrp.Position.Y
-                if current_y < flee_target_y - 2 then
-                    -- Sobe 5 studs por frame (devagar, sem detector)
-                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 5, my_hrp.Position.Z)
+                if current_y < flee_target_y - 3 then
+                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 2, my_hrp.Position.Z)
                 else
-                    -- Chegou, mantém lá
                     my_hrp.CFrame = CFrame.new(my_hrp.Position.X, flee_target_y, my_hrp.Position.Z)
                 end
             end
@@ -171,7 +166,6 @@ local function start_auto_farm()
                 hum.PlatformStand = false
                 farm_state = "IDLE"
                 flee_target_y = nil
-                flee_start_y = nil
             end
         end
 
