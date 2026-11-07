@@ -1,6 +1,5 @@
-
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - DOOR + RAYCAST)
+-- NYXIUM HUB - ITADORI (PARTE 3 - DOOR COM MOVETO)
 -- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
@@ -9,7 +8,6 @@ local door_interact_time = 0
 local last_health = 100
 local door_speed = 60
 local door_attempts = 0
-local door_walk_timer = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -69,26 +67,6 @@ local function instant_interact(prompt)
     return false
 end
 
--- RAYCAST INTELIGENTE (desvia de paredes)
-local function smart_nav(start_pos, target_pos, char, door_model)
-    door_walk_timer = door_walk_timer + 0.016
-    if door_walk_timer > 2.5 then
-        return Vector3.new(0, 1, 0)
-    end
-    local base_dir = (target_pos - start_pos).Unit
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {char, door_model}
-    params.IgnoreWater = true
-    local angles = {0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75}
-    for _, ang in ipairs(angles) do
-        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
-        local hit = Workspace:Raycast(start_pos, rot * 15, params)
-        if not hit then return rot end
-    end
-    return base_dir
-end
-
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_open_door then
@@ -97,7 +75,6 @@ local function start_auto_open_door()
                 reset_character()
                 target_prompt = nil
                 door_attempts = 0
-                door_walk_timer = 0
             end
             return
         end
@@ -142,7 +119,6 @@ local function start_auto_open_door()
                 target_door_part = closest_part
                 door_state = "WALKING"
                 door_attempts = 0
-                door_walk_timer = 0
             end
             return
         end
@@ -158,9 +134,9 @@ local function start_auto_open_door()
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 4 then
                 hum.WalkSpeed = door_speed
-                local move_dir = smart_nav(hrp.Position, target_pos, char, target_door_model)
-                hrp.CFrame = hrp.CFrame + (move_dir * door_speed * dt)
+                hum:MoveTo(target_pos)
             else
+                hum:MoveTo(hrp.Position)
                 door_state = "OPENING"
                 door_interact_time = tick()
             end
