@@ -1,3 +1,6 @@
+-- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 4 - INTERFACE)
+-- ============================================================
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
 
@@ -42,7 +45,7 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Voo 200)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Suave)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
 FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s end })
