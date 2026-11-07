@@ -23,7 +23,7 @@ K.cfg = {
     fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
     auto_farm_pumpkin = false, esp_door = false, auto_open_door = false, door_noclip = true,
     esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
-    esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false, auto_regen = false,
+    esp_skeleton = false, esp_lines = false, esp_chams = false, auto_regen = false,
 }
 local cfg = K.cfg
 
@@ -171,18 +171,15 @@ local function start_esp()
                     local height = math.abs(head_pos.Y - foot_pos.Y)
                     local width = height * 0.6
                     local top_left = Vector2.new(head_pos.X - width / 2, head_pos.Y)
-                    
                     obj.box.Size = Vector2.new(width, height); obj.box.Position = top_left; obj.box.Visible = cfg.esp_box; obj.box.Color = Color3.fromRGB(255, 255, 255)
                     if cfg.esp_health_bar then
                         local hp_ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                         obj.hp_bg.Size = Vector2.new(3, height); obj.hp_bg.Position = Vector2.new(top_left.X - 6, top_left.Y); obj.hp_bg.Visible = true; obj.hp_bg.Color = Color3.fromRGB(0,0,0)
                         obj.hp_fill.Size = Vector2.new(3, height * hp_ratio); obj.hp_fill.Position = Vector2.new(top_left.X - 6, top_left.Y + (height * (1 - hp_ratio))); obj.hp_fill.Color = Color3.fromRGB(0, 255, 0); obj.hp_fill.Visible = true
                     else obj.hp_bg.Visible = false; obj.hp_fill.Visible = false end
-                    
                     obj.name.Text = plr.Name; obj.name.Position = Vector2.new(head_pos.X, top_left.Y - 20); obj.name.Visible = cfg.esp_name; obj.name.Color = Color3.fromRGB(255,255,255)
                     obj.distance.Text = string.format("[%d m]", math.floor(dist)); obj.distance.Position = Vector2.new(head_pos.X, top_left.Y + height + 5); obj.distance.Visible = cfg.esp_distance; obj.distance.Color = Color3.fromRGB(255,255,0)
                     obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); obj.line.To = Vector2.new(head_pos.X, head_pos.Y); obj.line.Visible = cfg.esp_lines; obj.line.Color = Color3.fromRGB(255,255,255)
-                    
                     if cfg.esp_skeleton then
                         local skel = char:FindFirstChild("UpperTorso") and skel_r15 or skel_r6
                         local i = 1
@@ -201,7 +198,6 @@ local function start_esp()
                 end
             end
         end
-
         if cfg.esp_door then
             for _, door in ipairs(cached_doors) do
                 if door and door:IsDescendantOf(Workspace) then
@@ -213,7 +209,6 @@ local function start_esp()
                         end
                         if on_screen then esp_doors[door].Position = Vector2.new(pos.X, pos.Y); esp_doors[door].Visible = true
                         else esp_doors[door].Visible = false end
-
                         if not door_chams[door] then
                             local h = Instance.new("Highlight"); h.FillColor=Color3.fromRGB(255, 165, 0); h.OutlineColor=Color3.fromRGB(255, 165, 0); h.Adornee=door; h.Parent=CoreGui; door_chams[door]=h
                         end
@@ -223,7 +218,6 @@ local function start_esp()
         else
             for door, txt in pairs(esp_doors) do txt:Remove(); esp_doors[door] = nil; if door_chams[door] then door_chams[door]:Destroy(); door_chams[door]=nil end end
         end
-        
         for door, txt in pairs(esp_doors) do
             if not door or not door:IsDescendantOf(Workspace) then
                 txt:Remove(); esp_doors[door] = nil
