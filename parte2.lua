@@ -115,10 +115,10 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM (versão original que funcionava)
+-- FARM COM SUBIDA DEVAGAR (SEM DETECTAR)
 local farm_state = "IDLE"
-local flee_bp = nil
-local flee_target = nil
+local flee_target_y = nil
+local flee_start_y = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -137,10 +137,10 @@ local function start_auto_farm()
             if farm_state == "FLEE" then
                 local hum = get_hum()
                 if hum then hum.PlatformStand = false end
-                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
             end
             farm_state = "IDLE"
-            flee_target = nil
+            flee_target_y = nil
+            flee_start_y = nil
             return
         end
 
@@ -151,24 +151,27 @@ local function start_auto_farm()
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                flee_target = my_hrp.Position + Vector3.new(0, 300, 0)
-                flee_bp = Instance.new("BodyPosition")
-                flee_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                flee_bp.P = 10000
-                flee_bp.D = 500
-                flee_bp.Position = flee_target
-                flee_bp.Parent = my_hrp
+                flee_start_y = my_hrp.Position.Y
+                flee_target_y = flee_start_y + 300
             end
-            if flee_bp then
-                flee_bp.Position = flee_target
+
+            if flee_target_y and flee_start_y then
+                local current_y = my_hrp.Position.Y
+                if current_y < flee_target_y - 2 then
+                    -- Sobe 5 studs por frame (devagar, sem detector)
+                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 5, my_hrp.Position.Z)
+                else
+                    -- Chegou, mantém lá
+                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, flee_target_y, my_hrp.Position.Z)
+                end
             end
             return
         else
             if farm_state == "FLEE" then
                 hum.PlatformStand = false
-                if flee_bp then flee_bp:Destroy(); flee_bp = nil end
                 farm_state = "IDLE"
-                flee_target = nil
+                flee_target_y = nil
+                flee_start_y = nil
             end
         end
 
