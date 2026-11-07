@@ -135,3 +135,155 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
+
+                door_state = "WALKING"
+                walk_timer = 0
+            else
+                -- Sobe 300 studs e ancora
+                if not wait_anchored then
+                    if wait_target_pos then
+                        local current_y = hrp.Position.Y
+                        local target_y = wait_target_pos.Y
+                        
+                        if current_y < target_y - 5 then
+                            hrp.CFrame = CFrame.new(wait_target_pos.X, current_y + 10, wait_target_pos.Z)
+                        else
+                            hrp.CFrame = CFrame.new(wait_target_pos.X, target_y, wait_target_pos.Z)
+                            hrp.Anchored = true
+                            wait_anchored = true
+                        end
+                    end
+                end
+            end
+        end
+
+        if door_state == "WALKING" then
+            walk_timer = walk_timer + dt
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then 
+                door_state = "IDLE" return 
+            end
+            
+            if cfg.door_noclip then
+                for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+            end
+            
+            local target_pos = target_door_part.Position
+            if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then
+                target_pos = target_prompt.Parent.Position
+            end
+            
+            local dist = (hrp.Position - target_pos).Magnitude
+            
+            if dist > 4 then
+                local move_dir = get_navigation_dir(hrp.Position, target_pos, char, target_door_model)
+                hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
+            else
+                door_state = "OPENING"
+                hum.WalkSpeed = 0
+                door_interact_time = tick()
+                
+                for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+                
+                if not is_holding_e then
+                    if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    is_holding_e = true
+                end
+            end
+        end
+
+        if door_state == "OPENING" then
+            if hum.Health <= 0 then
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+            end
+            
+            if target_door_part then
+                hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
+            end
+            
+            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
+                if is_holding_e then 
+                    if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
+                end
+                
+                hum.PlatformStand = false
+                hum.WalkSpeed = 16
+                for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end
+                door_state = "IDLE"
+                task.wait(0.5)
+            end
+        end
+    end)
+end
+
+RunService.Heartbeat:Connect(update_auto_block)
+RunService.RenderStepped:Connect(update_player_movement)
+start_auto_farm()
+start_auto_open_door()
+start_esp()
+
+-- ============================================================
+-- INTERFACE WIND UI
+-- ============================================================
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local Window = WindUI:CreateWindow({ Title = "Nyxium | Itadori", Author = "karpa", Folder = "NyxiumItadori", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
+
+local Tab = Window:Tab({ Title = "Combat", Icon = "swords" })
+Tab:Section({ Title = "Auto Black Flash" })
+Tab:Toggle({ Title = "Auto Black Flash", Default = false, Callback = function(s) cfg.auto_black_flash = s end })
+Tab:Section({ Title = "Auto Block" })
+Tab:Toggle({ Title = "Auto Block", Default = false, Callback = function(s) cfg.auto_block = s end })
+Tab:Slider({ Title = "Block Range", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.block_range = v end })
+
+local MiscTab = Window:Tab({ Title = "Misc", Icon = "crosshair" })
+MiscTab:Section({ Title = "Aimbot" })
+MiscTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(s) cfg.aim_enabled = s end })
+MiscTab:Toggle({ Title = "Hold RMB", Desc = "Só puxa segurando o botão direito", Default = false, Callback = function(s) cfg.aim_hold_rmb = s end })
+MiscTab:Toggle({ Title = "Show FOV", Default = false, Callback = function(s) cfg.show_fov = s end })
+MiscTab:Toggle({ Title = "Visible Check", Default = true, Callback = function(s) cfg.aim_visible_check = s end })
+MiscTab:Toggle({ Title = "Dead Check", Default = true, Callback = function(s) cfg.aim_dead_check = s end })
+MiscTab:Slider({ Title = "FOV Size", Value = { Min = 20, Max = 500, Default = 120 }, Callback = function(v) cfg.aim_fov = v end })
+MiscTab:Slider({ Title = "Smoothness", Value = { Min = 1, Max = 100, Default = 15 }, Callback = function(v) cfg.aim_smoothness = v end })
+
+MiscTab:Section({ Title = "Console Lock On" })
+MiscTab:Toggle({ Title = "Enable Lock On", Default = false, Callback = function(s) cfg.lock_on_enabled = s end })
+MiscTab:Slider({ Title = "Lock On Range (Studs)", Desc = "Só trava se o cara estiver perto", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.lock_on_range = v end })
+
+MiscTab:Section({ Title = "Auto Regen" })
+MiscTab:Toggle({ Title = "Auto Regen (R Key)", Desc = "Aperta R para reviver", Default = false, Callback = function(s) cfg.auto_regen = s end })
+
+local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+PlayerTab:Section({ Title = "Speed Bypass" })
+PlayerTab:Toggle({ Title = "Enable Speed Bypass", Default = false, Callback = function(s) cfg.speed_bypass = s end })
+PlayerTab:Slider({ Title = "Speed Value", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) cfg.speed_val = v end })
+PlayerTab:Section({ Title = "Noclip Bypass" })
+PlayerTab:Toggle({ Title = "Enable Noclip Bypass", Default = false, Callback = function(s) cfg.noclip_bypass = s end })
+PlayerTab:Slider({ Title = "Push Speed", Value = { Min = 10, Max = 100, Default = 60 }, Callback = function(v) cfg.noclip_speed = v end })
+PlayerTab:Section({ Title = "Fly Bypass" })
+PlayerTab:Toggle({ Title = "Enable Fly Bypass", Default = false, Callback = function(s) cfg.fly_bypass = s end })
+PlayerTab:Slider({ Title = "Fly Speed", Value = { Min = 16, Max = 500, Default = 100 }, Callback = function(v) cfg.fly_speed = v end })
+PlayerTab:Section({ Title = "Jump Power" })
+PlayerTab:Toggle({ Title = "Enable Jump Power", Default = false, Callback = function(s) cfg.jump_power_enabled = s end })
+PlayerTab:Slider({ Title = "Jump Power Value", Value = { Min = 50, Max = 250, Default = 50 }, Callback = function(v) cfg.jump_power_val = v end })
+PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(s) cfg.inf_jump = s end })
+
+local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
+FarmTab:Section({ Title = "Pumpkin Farm" })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Grudado)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Section({ Title = "Halloween Door Farm" })
+FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Voo 300)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
+
+local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
+VisTab:Section({ Title = "ESP Principal" })
+VisTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(s) cfg.esp_enabled = s end })
+VisTab:Toggle({ Title = "Chams (Branco)", Default = false, Callback = function(s) cfg.esp_chams = s end })
+VisTab:Section({ Title = "Elementos" })
+VisTab:Toggle({ Title = "Box", Default = false, Callback = function(s) cfg.esp_box = s end })
+VisTab:Toggle({ Title = "Skeleton", Default = false, Callback = function(s) cfg.esp_skeleton = s end })
+VisTab:Toggle({ Title = "Lines", Default = false, Callback = function(s) cfg.esp_lines = s end })
+VisTab:Toggle({ Title = "Nome", Default = false, Callback = function(s) cfg.esp_name = s end })
+VisTab:Toggle({ Title = "Distância", Default = false, Callback = function(s) cfg.esp_distance = s end })
+VisTab:Toggle({ Title = "Barra de Vida", Default = false, Callback = function(s) cfg.esp_health_bar = s end })
