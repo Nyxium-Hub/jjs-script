@@ -240,7 +240,6 @@ end
 -- ============================================================
 -- NYXIUM HUB - ITADORI (PARTE 2)
 -- ============================================================
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
 local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
 local BlockActivate = BlockRE:WaitForChild("Activated")
@@ -381,11 +380,8 @@ local function start_auto_farm()
             local dist = (my_hrp.Position - target_hrp.Position).Magnitude
             if dist > 5 then
                 local move_dir = (target_hrp.Position - my_hrp.Position).Unit
-                
-                -- Voa por cima se bater em algo
                 local ray = Workspace:Raycast(my_hrp.Position, move_dir * 6, RaycastParams.new())
                 if ray then move_dir = Vector3.new(move_dir.X, 1, move_dir.Z).Unit end
-                
                 my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt)
             else
                 farm_state = "ATTACKING"
@@ -404,20 +400,11 @@ local function start_auto_farm()
     end)
 end
 
--- AUTO OPEN DOOR (FARM UNDERGROUND E PROMPT DETECTION)
+-- AUTO OPEN DOOR (FARM UNDERGROUND CORRIGIDO)
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
-local prompt_active = false
-local door_cam_connection = nil
-
-ProximityPromptService.PromptShown:Connect(function(prompt)
-    if cfg.auto_open_door and prompt.Parent and prompt.Parent.Name:lower():find("door") then
-        prompt_active = true
-    end
-end)
-ProximityPromptService.PromptHidden:Connect(function()
-    prompt_active = false
-end)
+local door_interact_time = 0
+local original_cam_type = Camera.CameraType
 
 local function start_auto_open_door()
     RunService.Heartbeat:Connect(function(dt)
@@ -425,7 +412,10 @@ local function start_auto_open_door()
             if door_state ~= "IDLE" then
                 door_state = "IDLE"
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                if door_cam_connection then door_cam_connection:Disconnect(); door_cam_connection = nil end
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.Anchored = false
+                end
+                Camera.CameraType = original_cam_type
             end
             return
         end
@@ -458,53 +448,56 @@ local function start_auto_open_door()
             local door_pos = target_door_part.Position
             local dist = (hrp.Position - door_pos).Magnitude
             
-            if dist > 5 then
+            if dist > 6 then
                 local move_dir = (door_pos - hrp.Position).Unit
-                
-                -- Se bater em alguma parede, sobe pra voar por cima
                 local rayParams = RaycastParams.new()
                 rayParams.FilterType = Enum.RaycastFilterType.Exclude
                 rayParams.FilterDescendantsInstances = {char, target_door_model}
                 local ray = Workspace:Raycast(hrp.Position, move_dir * 8, rayParams)
-                
                 if ray then move_dir = Vector3.new(move_dir.X, 0.5, move_dir.Z).Unit end
-                
                 hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
                 door_state = "OPENING"
                 hum.WalkSpeed = 0
+                door_interact_time = tick()
                 
-                -- AFUNDA O BONECO E PUXA A CÂMERA PRA CIMA
-                local underground_pos = CFrame.new(door_pos.X, door_pos.Y - 2.5, door_pos.Z)
+                -- Desliga a colisão e ancora pra baixo
+                hrp.Anchored = true
+                hrp.CanCollide = false
                 
-                if door_cam_connection then door_cam_connection:Disconnect() end
-                door_cam_connection = RunService.RenderStepped:Connect(function()
-                    if not cfg.auto_open_door or door_state ~= "OPENING" then return end
-                    hrp.CFrame = underground_pos
-                    Camera.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 5, 0), door_pos)
-                end)
-                
-                task.spawn(function()
-                    local end_time = tick() + 8 -- Fica 8 segundos tentando
-                    while tick() < end_time and cfg.auto_open_door do
-                        if not target_door_model or not target_door_model:IsDescendantOf(Workspace) then break end
-                        
-                        if prompt_active then
-                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                            task.wait(0.2)
-                        else
-                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        end
-                        task.wait(0.1)
-                    end
-                    
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                    hum.WalkSpeed = 16
-                    if door_cam_connection then door_cam_connection:Disconnect(); door_cam_connection = nil end
-                    door_state = "IDLE"
-                    task.wait(1)
-                end)
+                -- Muda a câmera pra não bugar
+                Camera.CameraType = Enum.CameraType.Scriptable
             end
+        end
+
+        if door_state == "OPENING" then
+            -- Checa se a porta sumiu ou tempo esgotou (6 seg)
+            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
+                -- Finaliza
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                hrp.Anchored = false
+                hrp.CanCollide = true
+                hum.WalkSpeed = 16
+                Camera.CameraType = original_cam_type
+                door_state = "IDLE"
+                task.wait(0.5)
+                return
+            end
+            
+            -- Posiciona o boneco embaixo da terra e a câmera olhando pra porta
+            if target_door_part then
+                local underground_pos = CFrame.new(target_door_part.Position.X, target_door_part.Position.Y - 3, target_door_part.Position.Z)
+                hrp.CFrame = underground_pos
+                
+                -- Camera fica 6 studs acima do HRP, olhando pra porta
+                local cam_pos = underground_pos.Position + Vector3.new(0, 6, 0)
+                Camera.CFrame = CFrame.lookAt(cam_pos, target_door_part.Position + Vector3.new(0, 1, 0))
+            end
+            
+            -- Segura o E
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.2)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
         end
     end)
 end
@@ -560,7 +553,7 @@ FarmTab:Section({ Title = "Pumpkin Farm" })
 FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Fly)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Underground + Prompt)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Underground)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
 VisTab:Section({ Title = "ESP Principal" })
