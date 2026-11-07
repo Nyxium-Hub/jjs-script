@@ -1,13 +1,13 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 3 - DOOR NO CHÃO)
+-- NYXIUM HUB - ITADORI (PARTE 3 - AUTO DOOR INSTANTÂNEO)
 -- ============================================================
 local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
 local door_interact_time = 0
-local is_holding_e = false
-local door_walk_timer = 0
 local last_health = 100
+local door_speed = 60
+local door_attempts = 0
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -45,21 +45,28 @@ local function reset_character()
     end
 end
 
-local function nav_dir(start_pos, target_pos, char, door_model)
-    door_walk_timer = door_walk_timer + 0.01
-    if door_walk_timer > 2.5 then return Vector3.new(0, 1, 0) end
-    local base_dir = (target_pos - start_pos).Unit
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {char, door_model}
-    params.IgnoreWater = true
-    local angles = {0, 20, -20, 40, -40, 60, -60}
-    for _, ang in ipairs(angles) do
-        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
-        local hit = Workspace:Raycast(start_pos, rot * 15, params)
-        if not hit then return rot end
+local function instant_interact(prompt)
+    if not prompt then return false end
+    if fireproximityprompt then
+        local ok = pcall(function()
+            fireproximityprompt(prompt)
+        end)
+        if ok then return true end
     end
-    return base_dir
+    local ok2 = pcall(function()
+        prompt.HoldDuration = 0.001
+        prompt.MaxActivationDistance = 100
+        prompt:InputHoldBegin()
+        task.wait(0.05)
+        prompt:InputHoldEnd()
+    end)
+    if ok2 then return true end
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+    return false
 end
 
 local function start_auto_open_door()
@@ -69,6 +76,7 @@ local function start_auto_open_door()
                 door_state = "IDLE"
                 reset_character()
                 target_prompt = nil
+                door_attempts = 0
             end
             return
         end
@@ -84,6 +92,7 @@ local function start_auto_open_door()
         if hum.Health < last_health and door_state == "OPENING" then
             last_health = hum.Health
             door_state = "WALKING"
+            door_attempts = 0
             return
         end
         last_health = hum.Health
@@ -111,7 +120,7 @@ local function start_auto_open_door()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
-                door_walk_timer = 0
+                door_attempts = 0
             end
             return
         end
@@ -126,10 +135,10 @@ local function start_auto_open_door()
             end
             local dist = (hrp.Position - target_pos).Magnitude
             if dist > 4 then
-                local move_dir = nav_dir(hrp.Position, target_pos, char, target_door_model)
-                -- Speed bypass de 60 studs
-                hrp.CFrame = hrp.CFrame + (move_dir * 60 * dt)
+                hum.WalkSpeed = door_speed
+                hum:MoveTo(target_pos)
             else
+                hum:MoveTo(hrp.Position)
                 door_state = "OPENING"
                 door_interact_time = tick()
             end
@@ -137,31 +146,29 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
-            -- INTERAÇÃO INSTANTÂNEA: aperta E 1 vez, se não abrir tenta de novo
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) then
                 reset_character()
                 door_state = "IDLE"
                 target_prompt = nil
+                door_attempts = 0
                 return
             end
-            -- Aperta E a cada 0.5s até a porta abrir
             if tick() - door_interact_time > 0.5 then
                 door_interact_time = tick()
-                pcall(function()
-                    if target_prompt then
-                        target_prompt:InputHoldBegin()
-                        task.wait(0.05)
-                        target_prompt:InputHoldEnd()
-                    end
-                end)
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                door_attempts = door_attempts + 1
+                instant_interact(target_prompt)
+                if door_attempts > 10 then
+                    door_state = "IDLE"
+                    target_prompt = nil
+                    door_attempts = 0
+                end
             end
             return
         end
     end)
 end
+
+function set_door_speed(v) door_speed = v end
 
 if update_auto_block then RunService.Heartbeat:Connect(update_auto_block) end
 if update_player_movement then RunService.RenderStepped:Connect(update_player_movement) end
