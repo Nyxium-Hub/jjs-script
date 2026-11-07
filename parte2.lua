@@ -109,9 +109,7 @@ UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum =
 
 local farm_state = "IDLE"
 local farm_target = nil
-local farm_walk_timer = 0
-local farm_flee_bp = nil
-local farm_flee_target = nil
+local farm_fly_pos = nil
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -127,43 +125,29 @@ end
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" then 
-                local hum = get_hum() 
-                if hum then hum.PlatformStand = false end
-                if farm_flee_bp then farm_flee_bp:Destroy(); farm_flee_bp = nil end
-            end
             farm_state = "IDLE"
             farm_target = nil
-            farm_flee_target = nil
-            farm_walk_timer = 0
+            farm_fly_pos = nil
             return
         end
         
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
         if not char or not my_hrp or not hum then return end
 
+        -- Se já é o Pumpkin, sobe 300 e espera
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
                 farm_state = "FLEE"
                 hum.PlatformStand = true
-                farm_flee_target = my_hrp.Position + Vector3.new(0, 300, 0)
-                farm_flee_bp = Instance.new("BodyPosition")
-                farm_flee_bp.MaxForce = Vector3.new(0, math.huge, 0)
-                farm_flee_bp.P = 5000
-                farm_flee_bp.D = 500
-                farm_flee_bp.Position = farm_flee_target
-                farm_flee_bp.Parent = my_hrp
+                farm_fly_pos = my_hrp.Position + Vector3.new(0, 300, 0)
             end
-            if farm_flee_bp then
-                farm_flee_bp.Position = farm_flee_target
-            end
+            my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
             return
         else
-            if farm_state == "FLEE" then 
+            if farm_state == "FLEE" then
                 hum.PlatformStand = false
-                if farm_flee_bp then farm_flee_bp:Destroy(); farm_flee_bp = nil end
                 farm_state = "IDLE"
-                farm_flee_target = nil
+                farm_fly_pos = nil
             end
         end
 
@@ -174,52 +158,43 @@ local function start_auto_farm()
             end
             if target then 
                 farm_target = target
-                farm_state = "WALKING"
-                farm_walk_timer = 0
+                farm_state = "FLYING"
+                hum.PlatformStand = true
+                farm_fly_pos = my_hrp.Position + Vector3.new(0, 200, 0)
             end
         end
 
-        if farm_state == "WALKING" and farm_target then
+        if farm_state == "FLYING" and farm_target then
             local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
             if not target_hrp or not is_alive(farm_target) then farm_state = "IDLE" farm_target = nil return end
             
-            farm_walk_timer = farm_walk_timer + dt
-            local dist = (my_hrp.Position - target_hrp.Position).Magnitude
+            -- Sobe até 200 studs
+            my_hrp.CFrame = CFrame.new(my_hrp.Position.X, farm_fly_pos.Y, my_hrp.Position.Z)
             
-            if dist > 4 then
-                local move_dir = (target_hrp.Position - my_hrp.Position).Unit
-                local ray_params = RaycastParams.new()
-                ray_params.FilterType = Enum.RaycastFilterType.Exclude
-                ray_params.FilterDescendantsInstances = {char, farm_target.Character}
-                ray_params.IgnoreWater = true
-                
-                if farm_walk_timer > 2.5 then
-                    move_dir = Vector3.new(0, 1, 0)
-                else
-                    local angles = {0, 20, -20, 45, -45, 70, -70, 90, -90}
-                    for _, angle in ipairs(angles) do
-                        local rotated_dir = (CFrame.Angles(0, math.rad(angle), 0) * move_dir)
-                        local hit = Workspace:Raycast(my_hrp.Position, rotated_dir * 20, ray_params)
-                        if not hit then move_dir = rotated_dir break end
-                    end
-                end
-                
-                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 80 * dt)
+            -- Voa em direção ao alvo no eixo X e Z
+            local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
+            local dist_xz = (my_hrp.Position - target_xz).Magnitude
+            
+            if dist_xz > 5 then
+                local move_dir = (target_xz - my_hrp.Position).Unit
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * 150 * dt)
             else
+                -- Chegou em cima, desce e ataca
                 farm_state = "ATTACKING"
                 task.spawn(function()
-                    local end_time = tick() + 1.5
-                    while tick() < end_time and cfg.auto_farm_pumpkin do
+                    local descend_time = tick() + 2
+                    while tick() < descend_time do
                         if not farm_target or not farm_target.Character then break end
                         local th = farm_target.Character:FindFirstChild("HumanoidRootPart")
                         if th then
                             my_hrp.CFrame = CFrame.new(th.Position + Vector3.new(0, 0, 3))
+                            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                            task.wait(0.2)
+                            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
                         end
-                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                        task.wait(0.2)
-                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end)
                         task.wait(0.2)
                     end
+                    hum.PlatformStand = false
                     farm_state = "IDLE"
                 end)
             end
