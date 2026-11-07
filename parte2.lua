@@ -1,5 +1,5 @@
 -- ============================================================
--- NYXIUM HUB - ITADORI (PARTE 2 - FARM SUAVE)
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM RÁPIDO)
 -- ============================================================
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
@@ -115,9 +115,10 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- FARM SUAVE (SUBE 2 STUDS POR FRAME)
+-- FARM RÁPIDO
 local farm_state = "IDLE"
 local flee_target_y = nil
+local farm_last_hit = 0
 
 local function has_pumpkin(plr)
     local char = plr.Character
@@ -154,8 +155,8 @@ local function start_auto_farm()
 
             if flee_target_y then
                 local current_y = my_hrp.Position.Y
-                if current_y < flee_target_y - 3 then
-                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 2, my_hrp.Position.Z)
+                if current_y < flee_target_y - 5 then
+                    my_hrp.CFrame = CFrame.new(my_hrp.Position.X, current_y + 6, my_hrp.Position.Z)
                 else
                     my_hrp.CFrame = CFrame.new(my_hrp.Position.X, flee_target_y, my_hrp.Position.Z)
                 end
@@ -179,7 +180,10 @@ local function start_auto_farm()
             if target_hrp then
                 farm_state = "ATTACKING"
                 my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
-                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                if tick() - farm_last_hit > 0.4 then
+                    farm_last_hit = tick()
+                    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+                end
             end
         else
             farm_state = "IDLE"
