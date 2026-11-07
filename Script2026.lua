@@ -342,7 +342,12 @@ end
 
 UserInputService.JumpRequest:Connect(function() if cfg.inf_jump then local hum = get_hum() if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
+-- AUTO FARM PUMPKIN (COLANDO E USANDO SKILLS 3 e 2, COM VOO DE 300 STUDS)
 local farm_state = "IDLE"
+local flee_start_pos = nil
+local flee_target_pos = nil
+local flee_anchored = false
+
 local function has_pumpkin(plr)
     local char = plr.Character
     if not char then return false end
@@ -357,8 +362,17 @@ end
 local function start_auto_farm()
     RunService.Heartbeat:Connect(function(dt)
         if not cfg.auto_farm_pumpkin then
-            if farm_state == "FLEE" then local hum = get_hum() if hum then hum.PlatformStand = false end end
-            farm_state = "IDLE"; return
+            if farm_state == "FLEE" then 
+                local hum = get_hum() 
+                local hrp = get_hrp()
+                if hum then hum.PlatformStand = false end
+                if hrp then hrp.Anchored = false end
+                if flee_anchored then flee_anchored = false end
+            end
+            farm_state = "IDLE"
+            flee_start_pos = nil
+            flee_target_pos = nil
+            return
         end
         
         local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
@@ -366,41 +380,65 @@ local function start_auto_farm()
 
         if has_pumpkin(LocalPlayer) then
             if farm_state ~= "FLEE" then
-                farm_state = "FLEE"; hum.PlatformStand = true
-                local bp = Instance.new("BodyPosition"); bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bp.Position = my_hrp.Position + Vector3.new(0, 500, 0); bp.Parent = my_hrp
-                task.spawn(function()
-                    while cfg.auto_farm_pumpkin and has_pumpkin(LocalPlayer) do
-                        if bp and my_hrp then bp.Position = my_hrp.Position + Vector3.new(math.random(-20, 20), 10, math.random(-20, 20)) end
-                        task.wait(0.5)
+                farm_state = "FLEE"
+                hum.PlatformStand = true
+                my_hrp.Anchored = false
+                flee_anchored = false
+                flee_start_pos = my_hrp.Position
+                flee_target_pos = flee_start_pos + Vector3.new(0, 300, 0)
+            end
+            
+            -- Sobe até 300 studs, depois ancora
+            if farm_state == "FLEE" and not flee_anchored then
+                if flee_target_pos then
+                    local current_y = my_hrp.Position.Y
+                    local target_y = flee_target_pos.Y
+                    
+                    if current_y < target_y - 5 then
+                        -- Ainda subindo
+                        my_hrp.CFrame = CFrame.new(flee_target_pos.X, current_y + 10, flee_target_pos.Z)
+                    else
+                        -- Chegou aos 300 studs, ancora
+                        my_hrp.CFrame = CFrame.new(flee_target_pos.X, target_y, flee_target_pos.Z)
+                        my_hrp.Anchored = true
+                        flee_anchored = true
                     end
-                    if bp then bp:Destroy() end
-                    if hum then hum.PlatformStand = false end
-                    farm_state = "IDLE"
-                end)
+                end
             end
             return
         else
-            if farm_state == "FLEE" then hum.PlatformStand = false; farm_state = "IDLE" end
+            if farm_state == "FLEE" then 
+                hum.PlatformStand = false
+                if my_hrp then my_hrp.Anchored = false end
+                farm_state = "IDLE"
+                flee_start_pos = nil
+                flee_target_pos = nil
+                flee_anchored = false
+            end
         end
 
-        if farm_state == "IDLE" then
-            local target = nil
-            for _, plr in ipairs(Players:GetPlayers()) do 
-                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end 
+        local target = nil
+        for _, plr in ipairs(Players:GetPlayers()) do 
+            if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end 
+        end
+
+        if target then 
+            local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if target_hrp then
+                farm_state = "ATTACKING"
+                local tween = TweenService:Create(my_hrp, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
+                tween:Play()
+                
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
+                    task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+                end)
             end
-            if target then 
-                local target_hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-                if target_hrp then
-                    farm_state = "WALKING"
-                    task.spawn(function()
-                        local dist = (my_hrp.Position - target_hrp.Position).Magnitude
-                        local tween = TweenService:Create(my_hrp, TweenInfo.new(math.clamp(dist/200, 0.2, 1), Enum.EasingStyle.Linear), {CFrame = target_hrp.CFrame * CFrame.new(0, 0, 3)})
-                        tween:Play(); tween.Completed:Wait()
-                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
-                        task.wait(0.5); farm_state = "IDLE"
-                    end)
-                end
-            end
+        else
+            farm_state = "IDLE"
         end
     end)
 end
@@ -411,9 +449,13 @@ local door_state = "IDLE"
 local target_door_model, target_door_part = nil, nil
 local target_prompt = nil
 local door_interact_time = 0
+local walk_timer = 0
 local is_holding_e = false
-local hover_bp = nil
-local hover_hrp = nil
+
+-- Variáveis do voo de espera
+local wait_start_pos = nil
+local wait_target_pos = nil
+local wait_anchored = false
 
 local function check_if_locked(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -435,33 +477,36 @@ local function check_if_locked(door)
     return false
 end
 
-local function remove_hover()
-    if hover_bp then hover_bp:Destroy(); hover_bp = nil end
+local function stop_waiting()
     local hum = get_hum()
+    local hrp = get_hrp()
     if hum then hum.PlatformStand = false end
-    hover_hrp = nil
+    if hrp and wait_anchored then hrp.Anchored = false end
+    wait_anchored = false
+    wait_start_pos = nil
+    wait_target_pos = nil
 end
 
--- RAYCAST INTELIGENTE (Contorna paredes lendo 20 studs em volta)
 local function get_navigation_dir(start_pos, target_pos, char, door_model)
+    if walk_timer > 2.5 then
+        return Vector3.new(0, 1, 0)
+    end
+    
     local base_dir = (target_pos - start_pos).Unit
     local ray_params = RaycastParams.new()
     ray_params.FilterType = Enum.RaycastFilterType.Exclude
     ray_params.FilterDescendantsInstances = {char, door_model}
     ray_params.IgnoreWater = true
     
-    -- Testa o caminho reto primeiro, depois ângulos pro lado
     local angles = {0, 20, -20, 45, -45, 70, -70, 90, -90}
     for _, angle in ipairs(angles) do
         local rotated_dir = (CFrame.Angles(0, math.rad(angle), 0) * base_dir)
         local hit = Workspace:Raycast(start_pos, rotated_dir * 20, ray_params)
         if not hit then
-            return rotated_dir -- Achou uma brecha, vai pra lá
+            return rotated_dir
         end
     end
-    
-    -- Tudo bloqueado: sobe
-    return (base_dir + Vector3.new(0, 1, 0)).Unit
+    return base_dir
 end
 
 local function start_auto_open_door()
@@ -477,25 +522,20 @@ local function start_auto_open_door()
                     LocalPlayer.Character.HumanoidRootPart.Anchored = false
                     for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end
                 end
-                remove_hover()
+                stop_waiting()
             end
             return
         end
 
         local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
-        if not char or not hrp or not hum then remove_hover() return end
+        if not char or not hrp or not hum then stop_waiting() return end
         
-        -- REGEN EMBUTIDO: Se morrer enquanto farma, tenta reviver sozinho
         if hum.Health <= 0 then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.1)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-            end)
+            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             return
         end
 
-        if #cached_doors == 0 then remove_hover() return end
+        if #cached_doors == 0 then stop_waiting() return end
 
         local closest_door, min_dist = nil, math.huge
         local closest_part = nil
@@ -521,38 +561,47 @@ local function start_auto_open_door()
 
         if door_state == "IDLE" then
             if any_unlocked and closest_door then
-                remove_hover()
+                stop_waiting()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
+                walk_timer = 0
             else
                 door_state = "WAITING"
+                wait_start_pos = hrp.Position
+                wait_target_pos = wait_start_pos + Vector3.new(0, 300, 0)
+                wait_anchored = false
             end
         end
         
         if door_state == "WAITING" then
             if any_unlocked then
-                remove_hover()
+                stop_waiting()
                 target_door_model = closest_door
                 target_door_part = closest_part
                 door_state = "WALKING"
+                walk_timer = 0
             else
-                hum.PlatformStand = true
-                if not hover_bp or hover_hrp ~= hrp then
-                    if hover_bp then hover_bp:Destroy() end
-                    hover_hrp = hrp
-                    hover_bp = Instance.new("BodyPosition")
-                    hover_bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                    hover_bp.P = 5000
-                    hover_bp.Position = hrp.Position + Vector3.new(0, 15, 0)
-                    hover_bp.Parent = hrp
-                else
-                    hover_bp.Position = hrp.Position + Vector3.new(0, 15, 0)
+                -- Sobe 300 studs e ancora
+                if not wait_anchored then
+                    if wait_target_pos then
+                        local current_y = hrp.Position.Y
+                        local target_y = wait_target_pos.Y
+                        
+                        if current_y < target_y - 5 then
+                            hrp.CFrame = CFrame.new(wait_target_pos.X, current_y + 10, wait_target_pos.Z)
+                        else
+                            hrp.CFrame = CFrame.new(wait_target_pos.X, target_y, wait_target_pos.Z)
+                            hrp.Anchored = true
+                            wait_anchored = true
+                        end
+                    end
                 end
             end
         end
 
         if door_state == "WALKING" then
+            walk_timer = walk_timer + dt
             if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then 
                 door_state = "IDLE" return 
             end
@@ -569,7 +618,6 @@ local function start_auto_open_door()
             local dist = (hrp.Position - target_pos).Magnitude
             
             if dist > 4 then
-                -- Usa o raycast inteligente pra contornar paredes
                 local move_dir = get_navigation_dir(hrp.Position, target_pos, char, target_door_model)
                 hrp.CFrame = hrp.CFrame + (move_dir * 130 * dt)
             else
@@ -577,11 +625,8 @@ local function start_auto_open_door()
                 hum.WalkSpeed = 0
                 door_interact_time = tick()
                 
-                -- Trava no lugar para o prompt não bugar
-                hrp.Anchored = true
-                hrp.CFrame = CFrame.new(target_pos + Vector3.new(0, 2, 0))
+                for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
                 
-                -- Ativa o prompt via método oficial (mais seguro que teclado)
                 if not is_holding_e then
                     if target_prompt then pcall(function() target_prompt:InputHoldBegin() end) end
                     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -591,28 +636,20 @@ local function start_auto_open_door()
         end
 
         if door_state == "OPENING" then
-            -- Regen embutido enquanto interage
             if hum.Health <= 0 then
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                    task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                end)
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
             end
             
-            -- Mantém travado no lugar
             if target_door_part then
                 hrp.CFrame = CFrame.new(target_door_part.Position + Vector3.new(0, 2, 0))
             end
             
-            -- Sai do loop após 6 segundos ou quando porta abrir/sumir
             if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) or (tick() - door_interact_time > 6) then
                 if is_holding_e then 
                     if target_prompt then pcall(function() target_prompt:InputHoldEnd() end) end
                     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game); is_holding_e = false 
                 end
                 
-                hrp.Anchored = false
                 hum.PlatformStand = false
                 hum.WalkSpeed = 16
                 for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end
@@ -673,10 +710,10 @@ PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function
 
 local FarmTab = Window:Tab({ Title = "Farm", Icon = "leaf" })
 FarmTab:Section({ Title = "Pumpkin Farm" })
-FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (TP Walk)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin (Grudado)", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s end })
 FarmTab:Section({ Title = "Halloween Door Farm" })
 FarmTab:Toggle({ Title = "ESP Halloween Door (Chams)", Default = false, Callback = function(s) cfg.esp_door = s end })
-FarmTab:Toggle({ Title = "Auto Open Door (Raycast Inteligente)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
+FarmTab:Toggle({ Title = "Auto Open Door (Voo 300)", Default = false, Callback = function(s) cfg.auto_open_door = s end })
 FarmTab:Toggle({ Title = "Door Noclip", Desc = "Atravessa paredes para chegar na porta", Default = true, Callback = function(s) cfg.door_noclip = s end })
 
 local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
