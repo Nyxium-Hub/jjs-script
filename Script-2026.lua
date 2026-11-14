@@ -1,1 +1,796 @@
+-- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 1)
+-- ============================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
 
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local K = getgenv().karpa or {}
+getgenv().karpa = K
+
+K.cfg = {
+    auto_block = false, block_range = 20, auto_black_flash = false,
+    aim_enabled = false, aim_hold_rmb = false, aim_fov = 120, show_fov = false,
+    aim_visible_check = true, aim_dead_check = true, aim_smoothness = 15, aim_hitbox = "Head",
+    lock_on_enabled = false, lock_on_range = 20, lock_on_key = Enum.KeyCode.LeftShift, lock_on_holding = false,
+    speed_bypass = false, speed_val = 60, noclip_bypass = false, noclip_speed = 60,
+    fly_bypass = false, fly_speed = 100, jump_power_enabled = false, jump_power_val = 50, inf_jump = false,
+    auto_farm_pumpkin = false, esp_door = false, auto_open_door = false, door_noclip = true,
+    esp_enabled = false, esp_box = false, esp_name = false, esp_distance = false, esp_health_bar = false,
+    esp_skeleton = false, esp_lines = false, esp_chams = false, anti_afk = false, auto_regen = false,
+}
+local cfg = K.cfg
+
+local function get_hrp() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChild("HumanoidRootPart") end
+local function get_hum() local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() return c:FindFirstChildOfClass("Humanoid") end
+local function is_alive(plr) local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") return h and h.Health > 0 end
+
+local cached_doors = {}
+task.spawn(function()
+    while task.wait(2) do
+        local temp = {}
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v.Name == "HalloweenDoor" then table.insert(temp, v) end
+        end
+        cached_doors = temp
+    end
+end)
+
+local lock_square = Drawing.new("Square")
+lock_square.Thickness = 2; lock_square.Color = Color3.fromRGB(255, 0, 0); lock_square.Transparency = 1; lock_square.Filled = false; lock_square.Visible = false
+
+UserInputService.InputBegan:Connect(function(input, gp) if not gp and input.KeyCode == cfg.lock_on_key and cfg.lock_on_enabled then cfg.lock_on_holding = true end end)
+UserInputService.InputEnded:Connect(function(input, gp) if not gp and input.KeyCode == cfg.lock_on_key then cfg.lock_on_holding = false end end)
+
+local function get_closest_in_range(range)
+    local my_hrp = get_hrp()
+    if not my_hrp then return nil end
+    local closest, min_dist = nil, range
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and is_alive(plr) then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (my_hrp.Position - hrp.Position).Magnitude
+                if dist < min_dist then min_dist, closest = dist, plr end
+            end
+        end
+    end
+    return closest
+end
+
+RunService.RenderStepped:Connect(function()
+    if cfg.lock_on_enabled and cfg.lock_on_holding then
+        local target = get_closest_in_range(cfg.lock_on_range)
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Character.Head.Position)
+            local pos, on_screen = Camera:WorldToViewportPoint(target.Character.Head.Position)
+            if on_screen then lock_square.Size = Vector2.new(40, 40); lock_square.Position = Vector2.new(pos.X - 20, pos.Y - 20); lock_square.Visible = true
+            else lock_square.Visible = false end
+        else lock_square.Visible = false end
+    else lock_square.Visible = false end
+end)
+
+local fov_circle = Drawing.new("Circle")
+fov_circle.Thickness = 1; fov_circle.NumSides = 64; fov_circle.Color = Color3.fromRGB(255, 255, 255); fov_circle.Transparency = 0.5; fov_circle.Filled = false; fov_circle.Visible = false
+
+local function get_aim_target()
+    local best, best_dist = nil, cfg.aim_fov
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and is_alive(player) then
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and (not cfg.aim_dead_check or hum.Health > 0) then
+                local part = char:FindFirstChild(cfg.aim_hitbox)
+                if part then
+                    local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
+                    if on_screen then
+                        local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                        if dist <= best_dist then
+                            if cfg.aim_visible_check then
+                                local ray = Ray.new(Camera.CFrame.Position, part.Position - Camera.CFrame.Position)
+                                local hit, _ = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
+                                if not (hit and not hit:IsDescendantOf(char)) then best, best_dist = part, dist end
+                            else best, best_dist = part, dist end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+RunService.RenderStepped:Connect(function()
+    if cfg.show_fov then fov_circle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2); fov_circle.Radius = cfg.aim_fov; fov_circle.Visible = true
+    else fov_circle.Visible = false end
+
+    if cfg.aim_enabled and (not cfg.aim_hold_rmb or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) then
+        local target = get_aim_target()
+        if target then
+            local goal = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+            Camera.CFrame = cfg.aim_smoothness > 1 and Camera.CFrame:Lerp(goal, 1 / cfg.aim_smoothness) or goal
+        end
+    end
+end)
+
+local esp_objects, esp_chams, esp_doors, door_chams = {}, {}, {}, {}
+
+local function remove_player_esp(plr)
+    if esp_objects[plr] then
+        for _, v in pairs(esp_objects[plr]) do if typeof(v)=="table" then for _,l in ipairs(v) do l:Remove() end else v:Remove() end end
+        esp_objects[plr] = nil
+    end
+    if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr] = nil end
+end
+Players.PlayerRemoving:Connect(remove_player_esp)
+
+local function create_esp(plr)
+    if plr == LocalPlayer or esp_objects[plr] then return end
+    local obj = {}
+    obj.name = Drawing.new("Text"); obj.name.Size=16; obj.name.Center=true; obj.name.Outline=true; obj.name.Visible=false
+    obj.distance = Drawing.new("Text"); obj.distance.Size=14; obj.distance.Center=true; obj.distance.Outline=true; obj.distance.Visible=false
+    obj.box = Drawing.new("Square"); obj.box.Thickness=1; obj.box.Transparency=1; obj.box.Filled=false; obj.box.Visible=false
+    obj.hp_bg = Drawing.new("Square"); obj.hp_bg.Filled=true; obj.hp_bg.Visible=false
+    obj.hp_fill = Drawing.new("Square"); obj.hp_fill.Filled=true; obj.hp_fill.Visible=false
+    obj.line = Drawing.new("Line"); obj.line.Thickness=1; obj.line.Transparency=0.5; obj.line.Visible=false
+    obj.skeleton = {}
+    for i=1,20 do obj.skeleton[i] = Drawing.new("Line"); obj.skeleton[i].Thickness=1; obj.skeleton[i].Visible=false end
+    esp_objects[plr] = obj
+end
+
+local skel_r15 = {{"Head","UpperTorso"},{"UpperTorso","LowerTorso"},{"LowerTorso","HumanoidRootPart"},{"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},{"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},{"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},{"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"}}
+local skel_r6 = {{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
+
+local function start_esp()
+    RunService.RenderStepped:Connect(function()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            if not cfg.esp_enabled or not is_alive(plr) then
+                if esp_objects[plr] then for _, v in pairs(esp_objects[plr]) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end end
+                if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr]=nil end
+                continue
+            end
+            if not esp_objects[plr] then create_esp(plr) end
+            local obj, char = esp_objects[plr], plr.Character
+            local hrp, head, hum = char and char:FindFirstChild("HumanoidRootPart"), char and char:FindFirstChild("Head"), char and char:FindFirstChildOfClass("Humanoid")
+            if hrp and head and hum then
+                local head_pos, on_screen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local foot_pos, _ = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.5, 0))
+                if on_screen then
+                    if cfg.esp_chams and not esp_chams[plr] then
+                        local h = Instance.new("Highlight"); h.FillColor=Color3.fromRGB(255,255,255); h.OutlineColor=Color3.fromRGB(255,255,255); h.Adornee=char; h.Parent=CoreGui; esp_chams[plr]=h
+                    end
+                    local dist = (get_hrp().Position - hrp.Position).Magnitude
+                    local height = math.abs(head_pos.Y - foot_pos.Y)
+                    local width = height * 0.6
+                    local top_left = Vector2.new(head_pos.X - width / 2, head_pos.Y)
+                    
+                    obj.box.Size = Vector2.new(width, height); obj.box.Position = top_left; obj.box.Visible = cfg.esp_box; obj.box.Color = Color3.fromRGB(255, 255, 255)
+                    if cfg.esp_health_bar then
+                        local hp_ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                        obj.hp_bg.Size = Vector2.new(3, height); obj.hp_bg.Position = Vector2.new(top_left.X - 6, top_left.Y); obj.hp_bg.Visible = true; obj.hp_bg.Color = Color3.fromRGB(0,0,0)
+                        obj.hp_fill.Size = Vector2.new(3, height * hp_ratio); obj.hp_fill.Position = Vector2.new(top_left.X - 6, top_left.Y + (height * (1 - hp_ratio))); obj.hp_fill.Color = Color3.fromRGB(0, 255, 0); obj.hp_fill.Visible = true
+                    else obj.hp_bg.Visible = false; obj.hp_fill.Visible = false end
+                    
+                    obj.name.Text = plr.Name; obj.name.Position = Vector2.new(head_pos.X, top_left.Y - 20); obj.name.Visible = cfg.esp_name; obj.name.Color = Color3.fromRGB(255,255,255)
+                    obj.distance.Text = string.format("[%d m]", math.floor(dist)); obj.distance.Position = Vector2.new(head_pos.X, top_left.Y + height + 5); obj.distance.Visible = cfg.esp_distance; obj.distance.Color = Color3.fromRGB(255,255,0)
+                    obj.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); obj.line.To = Vector2.new(head_pos.X, head_pos.Y); obj.line.Visible = cfg.esp_lines; obj.line.Color = Color3.fromRGB(255,255,255)
+                    
+                    if cfg.esp_skeleton then
+                        local skel = char:FindFirstChild("UpperTorso") and skel_r15 or skel_r6
+                        local i = 1
+                        for _, conn in ipairs(skel) do
+                            local p1, p2 = char:FindFirstChild(conn[1]), char:FindFirstChild(conn[2])
+                            if p1 and p2 and p1:IsA("BasePart") and p2:IsA("BasePart") then
+                                local s1, o1 = Camera:WorldToViewportPoint(p1.Position); local s2, o2 = Camera:WorldToViewportPoint(p2.Position)
+                                if o1 and o2 and i <= #obj.skeleton then obj.skeleton[i].From = Vector2.new(s1.X, s1.Y); obj.skeleton[i].To = Vector2.new(s2.X, s2.Y); obj.skeleton[i].Visible = true; obj.skeleton[i].Color = Color3.fromRGB(255,255,255); i = i + 1 end
+                            end
+                        end
+                        for j = i, #obj.skeleton do obj.skeleton[j].Visible = false end
+                    else for _, line in ipairs(obj.skeleton) do line.Visible = false end end
+                else
+                    for _, v in pairs(obj) do if typeof(v)=="table" then for _,l in ipairs(v) do l.Visible=false end else v.Visible=false end end
+                    if esp_chams[plr] then esp_chams[plr]:Destroy(); esp_chams[plr]=nil end
+                end
+            end
+        end
+
+        if cfg.esp_door then
+            for _, door in ipairs(cached_doors) do
+                if door and door:IsDescendantOf(Workspace) then
+                    local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
+                    if part then
+                        local pos, on_screen = Camera:WorldToViewportPoint(part.Position)
+                        if not esp_doors[door] then
+                            esp_doors[door] = Drawing.new("Text"); esp_doors[door].Size = 14; esp_doors[door].Center = true; esp_doors[door].Outline = true; esp_doors[door].Color = Color3.fromRGB(255, 165, 0); esp_doors[door].Text = "Halloween Door"
+                        end
+                        if on_screen then esp_doors[door].Position = Vector2.new(pos.X, pos.Y); esp_doors[door].Visible = true
+                        else esp_doors[door].Visible = false end
+
+                        if not door_chams[door] then
+                            local h = Instance.new("Highlight"); h.FillColor=Color3.fromRGB(255, 165, 0); h.OutlineColor=Color3.fromRGB(255, 165, 0); h.Adornee=door; h.Parent=CoreGui; door_chams[door]=h
+                        end
+                    end
+                end
+            end
+        else
+            for door, txt in pairs(esp_doors) do txt:Remove(); esp_doors[door] = nil; if door_chams[door] then door_chams[door]:Destroy(); door_chams[door]=nil end end
+        end
+        
+        for door, txt in pairs(esp_doors) do
+            if not door or not door:IsDescendantOf(Workspace) then
+                txt:Remove(); esp_doors[door] = nil
+                if door_chams[door] then door_chams[door]:Destroy(); door_chams[door] = nil end
+            end
+        end
+    end)
+end -- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 2 - FARM VOO + SPEED SEM PULO)
+-- ============================================================
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Knit = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
+local BlockRE = Knit:WaitForChild("BlockService"):WaitForChild("RE")
+local BlockActivate = BlockRE:WaitForChild("Activated")
+local BlockDeactivate = BlockRE:WaitForChild("Deactivated")
+
+local is_regenerating = false
+task.spawn(function()
+    while task.wait(0.1) do
+        if cfg.auto_regen then
+            local hum = get_hum()
+            if hum and hum.Health <= 0 and not is_regenerating then
+                is_regenerating = true
+                task.spawn(function()
+                    local end_time = tick() + 3
+                    while tick() < end_time do
+                        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                        pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+                        task.wait(0.1)
+                    end
+                    is_regenerating = false
+                end)
+            end
+        end
+    end
+end)
+
+local is_blocking = false
+local function update_auto_block()
+    if not cfg.auto_block then
+        if is_blocking then pcall(function() BlockDeactivate:FireServer() end); VirtualInputManager:SendMouseButtonEvent(0, 0, 2, false, game, 0); is_blocking = false end
+        return
+    end
+    local my_hrp = get_hrp()
+    local enemy, min_dist = nil, cfg.block_range
+    if my_hrp then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and is_alive(plr) then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (my_hrp.Position - hrp.Position).Magnitude
+                    if dist < min_dist then min_dist, enemy = dist, plr end
+                end
+            end
+        end
+    end
+    local is_attacking = false
+    if enemy and enemy.Character then
+        local enemy_hum = enemy.Character:FindFirstChildOfClass("Humanoid")
+        if enemy_hum then
+            for _, track in ipairs(enemy_hum:GetPlayingAnimationTracks()) do
+                local a = track.Animation.Name:lower()
+                if a:find("attack") or a:find("punch") or a:find("kick") or a:find("slash") or a:find("m1") then is_attacking = true break end
+            end
+        end
+    end
+    if is_attacking and not is_blocking then
+        if enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, enemy.Character.HumanoidRootPart.Position) end
+        pcall(function() BlockActivate:FireServer() end); VirtualInputManager:SendMouseButtonEvent(0, 0, 2, true, game, 0); is_blocking = true
+    elseif not is_attacking and is_blocking then
+        pcall(function() BlockDeactivate:FireServer() end); VirtualInputManager:SendMouseButtonEvent(0, 0, 2, false, game, 0); is_blocking = false
+    end
+end
+
+local fly_vel = nil
+local function update_player_movement(dt)
+    local char = LocalPlayer.Character
+    local hrp = get_hrp()
+    local hum = get_hum()
+    if not char or not hrp or not hum then return end
+
+    local farming_pumpkin = cfg.auto_farm_pumpkin
+    local door_active = cfg.auto_open_door and door_state ~= "IDLE"
+
+    if cfg.speed_bypass and not farming_pumpkin then
+        hum.WalkSpeed = math.clamp(cfg.speed_val, 16, 50)
+        if cfg.speed_val > 50 and hum.MoveDirection.Magnitude > 0 then
+            local extra = cfg.speed_val - 50
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * extra * dt)
+        end
+    elseif not farming_pumpkin then
+        hum.WalkSpeed = 16
+    end
+
+    if cfg.noclip_bypass and not farming_pumpkin and not door_active then
+        for _, p in ipairs(char:GetDescendants()) do 
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = false end 
+        end
+        if hum.MoveDirection.Magnitude > 0 then hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfg.noclip_speed * dt) end
+    elseif not farming_pumpkin and not door_active then
+        for _, p in ipairs(char:GetDescendants()) do 
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end 
+        end
+    end
+    hrp.CanCollide = true
+
+    if cfg.jump_power_enabled then 
+        hum.UseJumpPower = true
+        hum.JumpPower = cfg.jump_power_val 
+    end
+
+    if cfg.fly_bypass then
+        hum.PlatformStand = true
+        if not fly_vel or fly_vel.Parent ~= hrp then
+            if fly_vel then fly_vel:Destroy() end
+            fly_vel = Instance.new("BodyVelocity")
+            fly_vel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            fly_vel.Velocity = Vector3.zero
+            fly_vel.Parent = hrp
+        end
+        local dir = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        fly_vel.Velocity = dir * cfg.fly_speed
+    else
+        if fly_vel then fly_vel:Destroy() fly_vel = nil end
+        if hum.PlatformStand and not farming_pumpkin and not door_active then hum.PlatformStand = false end
+    end
+end
+
+UserInputService.JumpRequest:Connect(function() 
+    if cfg.inf_jump then 
+        local hum = get_hum() 
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end 
+    end 
+end)
+
+-- FARM PUMPKIN COM VOO 200
+local farm_state = "IDLE"
+local farm_target = nil
+local farm_last_hit = 0
+local farm_speed = 60
+local farm_bp = nil
+local farm_fly_y = nil
+
+local function has_pumpkin(plr)
+    local char = plr.Character
+    if not char then return false end
+    if plr:GetAttribute("Pumpkin") or plr:GetAttribute("IsPumpkin") or plr:GetAttribute("HasPumpkin") then return true end
+    if char:GetAttribute("Pumpkin") or char:GetAttribute("IsPumpkin") then return true end
+    local bp = plr:FindFirstChildOfClass("Backpack")
+    if bp then for _, item in ipairs(bp:GetChildren()) do local n = item.Name:lower() if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end end end
+    for _, item in ipairs(char:GetChildren()) do local n = item.Name:lower() if n == "pumpkin" or n == "pumpkinhead" or n == "pum" then return true end end
+    return false
+end
+
+local function remove_bp()
+    if farm_bp then farm_bp:Destroy(); farm_bp = nil end
+end
+
+local function create_bp(hrp, y)
+    if farm_bp then farm_bp:Destroy() end
+    hrp.CanCollide = true
+    farm_bp = Instance.new("BodyPosition")
+    farm_bp.MaxForce = Vector3.new(0, 1000000, 0)
+    farm_bp.P = 100000
+    farm_bp.D = 5000
+    farm_bp.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
+    farm_bp.Parent = hrp
+end
+
+local function start_auto_farm()
+    RunService.Heartbeat:Connect(function(dt)
+        if not cfg.auto_farm_pumpkin then
+            if farm_state ~= "IDLE" then
+                local hum = get_hum()
+                local hrp = get_hrp()
+                if hum then hum.PlatformStand = false end
+                if hrp then hrp.Anchored = false end
+                remove_bp()
+            end
+            farm_state = "IDLE"
+            farm_target = nil
+            farm_fly_y = nil
+            return
+        end
+
+        local char, my_hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
+        if not char or not my_hrp or not hum then return end
+
+        if has_pumpkin(LocalPlayer) then
+            if farm_state ~= "FLEE" then
+                farm_state = "FLEE"
+                farm_fly_y = my_hrp.Position.Y + 300
+                create_bp(my_hrp, farm_fly_y)
+            end
+            if farm_bp and farm_fly_y then
+                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
+            end
+            return
+        else
+            if farm_state == "FLEE" then
+                hum.PlatformStand = false
+                remove_bp()
+                farm_state = "IDLE"
+                farm_fly_y = nil
+            end
+        end
+
+        if farm_state == "IDLE" then
+            local target = nil
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and is_alive(plr) and has_pumpkin(plr) then target = plr break end
+            end
+            if target then
+                farm_target = target
+                farm_state = "FLYING"
+                farm_fly_y = my_hrp.Position.Y + 200
+                create_bp(my_hrp, farm_fly_y)
+            end
+            return
+        end
+
+        if farm_state == "FLYING" and farm_target then
+            local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
+            if not target_hrp or not is_alive(farm_target) then 
+                farm_state = "IDLE" 
+                farm_target = nil 
+                remove_bp()
+                return 
+            end
+            if farm_bp and farm_fly_y then
+                farm_bp.Position = Vector3.new(my_hrp.Position.X, farm_fly_y, my_hrp.Position.Z)
+            end
+            local target_xz = Vector3.new(target_hrp.Position.X, my_hrp.Position.Y, target_hrp.Position.Z)
+            local dist_xz = (my_hrp.Position - target_xz).Magnitude
+            if dist_xz > 6 then
+                local move_dir = (target_xz - my_hrp.Position).Unit
+                my_hrp.CFrame = my_hrp.CFrame + (move_dir * farm_speed * dt)
+            else
+                farm_state = "ATTACKING"
+                remove_bp()
+            end
+            return
+        end
+
+        if farm_state == "ATTACKING" and farm_target then
+            local target_hrp = farm_target.Character and farm_target.Character:FindFirstChild("HumanoidRootPart")
+            if not target_hrp or not is_alive(farm_target) then 
+                farm_state = "IDLE" 
+                farm_target = nil 
+                return 
+            end
+            my_hrp.CFrame = CFrame.new(target_hrp.Position + Vector3.new(0, 0, 3))
+            if tick() - farm_last_hit > 0.4 then
+                farm_last_hit = tick()
+                pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game); task.wait(0.05); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end)
+            end
+            return
+        end
+    end)
+end
+
+function set_farm_speed(v) farm_speed = v end-- ============================================================
+-- NYXIUM HUB - ITADORI (PARTE 3)
+-- ============================================================
+local door_state = "IDLE"
+local target_door_model, target_door_part = nil, nil
+local target_prompt = nil
+local door_interact_time = 0
+local last_health = 100
+local door_speed = 60
+local door_attempts = 0
+local door_walk_timer = 0
+
+local function check_if_locked(door)
+    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then return not prompt.Enabled end
+    local frame = door:FindFirstChild("Frame")
+    if frame then
+        local children = frame:GetChildren()
+        if children[3] then
+            local thirdChild = children[3]
+            if thirdChild:GetAttribute("Locked") == true then return true end
+            if thirdChild:IsA("BoolValue") and thirdChild.Value == true then return true end
+            local b = thirdChild:FindFirstChild("Locked")
+            if b and b:IsA("BoolValue") and b.Value == true then return true end
+        end
+    end
+    for _, obj in ipairs(door:GetDescendants()) do
+        if obj.Name == "Locked" and obj:IsA("BoolValue") and obj.Value == true then return true end
+    end
+    return false
+end
+
+local function reset_character()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hrp then hrp.Anchored = false; hrp.CanCollide = true end
+    if hum then
+        hum.PlatformStand = false
+        hum.WalkSpeed = 16
+        hum.JumpPower = 50
+    end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then p.CanCollide = true end
+    end
+end
+
+local function instant_interact(prompt)
+    if not prompt then return false end
+    if fireproximityprompt then
+        local ok = pcall(function() fireproximityprompt(prompt) end)
+        if ok then return true end
+    end
+    local ok2 = pcall(function()
+        prompt.HoldDuration = 0.001
+        prompt.MaxActivationDistance = 100
+        prompt:InputHoldBegin()
+        task.wait(0.05)
+        prompt:InputHoldEnd()
+    end)
+    if ok2 then return true end
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+    return false
+end
+
+local function smart_nav(start_pos, target_pos, char, door_model)
+    door_walk_timer = door_walk_timer + 0.016
+    if door_walk_timer > 2.5 then return Vector3.new(0, 1, 0) end
+    local base_dir = (target_pos - start_pos).Unit
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, door_model}
+    params.IgnoreWater = true
+    local angles = {0, 15, -15, 30, -30, 45, -45, 60, -60}
+    for _, ang in ipairs(angles) do
+        local rot = CFrame.Angles(0, math.rad(ang), 0) * base_dir
+        local hit = Workspace:Raycast(start_pos, rot * 12, params)
+        if not hit then return rot end
+    end
+    return base_dir
+end
+
+local function start_auto_open_door()
+    RunService.Heartbeat:Connect(function(dt)
+        if not cfg.auto_open_door then
+            if door_state ~= "IDLE" then
+                door_state = "IDLE"
+                reset_character()
+                target_prompt = nil
+                door_attempts = 0
+            end
+            return
+        end
+
+        local char, hrp, hum = LocalPlayer.Character, get_hrp(), get_hum()
+        if not char or not hrp or not hum then return end
+        if hum.Health <= 0 then
+            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game); task.wait(0.1); VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game) end)
+            return
+        end
+        if #cached_doors == 0 then return end
+
+        if hum.Health < last_health and door_state == "OPENING" then
+            last_health = hum.Health
+            door_state = "WALKING"
+            door_attempts = 0
+            return
+        end
+        last_health = hum.Health
+
+        if door_state == "IDLE" then
+            local closest_door, min_dist = nil, math.huge
+            local closest_part = nil
+            for _, door in ipairs(cached_doors) do
+                if door and door:IsDescendantOf(Workspace) then
+                    if not check_if_locked(door) then
+                        local part = door:IsA("Model") and (door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart")) or door
+                        if part then
+                            local dist = (hrp.Position - part.Position).Magnitude
+                            if dist < min_dist then
+                                min_dist = dist
+                                closest_door = door
+                                closest_part = part
+                                target_prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+                            end
+                        end
+                    end
+                end
+            end
+            if closest_door and closest_part then
+                target_door_model = closest_door
+                target_door_part = closest_part
+                door_state = "WALKING"
+                door_attempts = 0
+                door_walk_timer = 0
+            end
+            return
+        end
+
+        if door_state == "WALKING" then
+            if not target_door_part or not target_door_part:IsDescendantOf(Workspace) or check_if_locked(target_door_model) then
+                door_state = "IDLE" return
+            end
+            local target_pos = target_door_part.Position
+            if target_prompt and target_prompt.Parent and target_prompt.Parent:IsA("BasePart") then
+                target_pos = target_prompt.Parent.Position
+            end
+            local dist = (hrp.Position - target_pos).Magnitude
+            if dist > 4 then
+                local move_dir = smart_nav(hrp.Position, target_pos, char, target_door_model)
+                hrp.CFrame = hrp.CFrame + (move_dir * door_speed * dt)
+            else
+                door_state = "OPENING"
+                door_interact_time = tick()
+            end
+            return
+        end
+
+        if door_state == "OPENING" then
+            if not target_door_model or not target_door_model:IsDescendantOf(Workspace) or (target_door_part and target_door_part.Transparency == 1) then
+                reset_character()
+                door_state = "IDLE"
+                target_prompt = nil
+                door_attempts = 0
+                return
+            end
+            if tick() - door_interact_time > 0.5 then
+                door_interact_time = tick()
+                door_attempts = door_attempts + 1
+                instant_interact(target_prompt)
+                if door_attempts > 10 then
+                    door_state = "IDLE"
+                    target_prompt = nil
+                    door_attempts = 0
+                end
+            end
+            return
+        end
+    end)
+end
+
+function set_door_speed(v) door_speed = v end
+
+if update_auto_block then RunService.Heartbeat:Connect(update_auto_block) end
+if update_player_movement then RunService.RenderStepped:Connect(update_player_movement) end
+if start_auto_farm then start_auto_farm() end
+if start_auto_open_door then start_auto_open_door() end
+if start_esp then start_esp() end-- ============================================================
+-- NYXIUM HUB - JJS HALLOWEEN (PARTE 4 - INTERFACE)
+-- ============================================================
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local Window = WindUI:CreateWindow({ Title = "Nyxium | JJS Halloween", Author = "miteuxz", Folder = "NyxiumJJS", Size = UDim2.fromOffset(520, 420), Theme = "Dark", Resizable = true })
+
+local function notify(title, text)
+    if WindUI and WindUI.Notify then
+        pcall(function() WindUI:Notify({ Title = title, Content = text, Duration = 3 }) end)
+    end
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "NyxiumFloat"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = game:GetService("CoreGui")
+
+local floatingBtn = Instance.new("TextButton")
+floatingBtn.Size = UDim2.fromOffset(44, 44)
+floatingBtn.Position = UDim2.new(0, 20, 0, 100)
+floatingBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+floatingBtn.Text = "N"
+floatingBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+floatingBtn.Font = Enum.Font.GothamBold
+floatingBtn.TextSize = 20
+floatingBtn.BorderSizePixel = 0
+floatingBtn.AutoButtonColor = false
+floatingBtn.Parent = gui
+local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 10); c1.Parent = floatingBtn
+local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(80, 80, 80); stroke.Thickness = 2; stroke.Parent = floatingBtn
+
+local dragging, dragStart, startPos, hasDragged = false, nil, nil, false
+floatingBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; hasDragged = false
+        dragStart = input.Position
+        startPos = floatingBtn.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        if math.abs(delta.X) > 3 or math.abs(delta.Y) > 3 then hasDragged = true end
+        floatingBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+floatingBtn.MouseButton1Click:Connect(function()
+    if not hasDragged then
+        pcall(function() Window:Toggle() end)
+    end
+    hasDragged = false
+end)
+
+local MiscTab = Window:Tab({ Title = "Misc", Icon = "crosshair" })
+MiscTab:Section({ Title = "Aimbot" })
+MiscTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(s) cfg.aim_enabled = s; notify("Aimbot", s and "Ativado" or "Desativado") end })
+MiscTab:Toggle({ Title = "Hold RMB", Default = false, Callback = function(s) cfg.aim_hold_rmb = s; notify("Hold RMB", s and "Ativado" or "Desativado") end })
+MiscTab:Toggle({ Title = "Show FOV", Default = false, Callback = function(s) cfg.show_fov = s; notify("Show FOV", s and "Ativado" or "Desativado") end })
+MiscTab:Toggle({ Title = "Visible Check", Default = true, Callback = function(s) cfg.aim_visible_check = s end })
+MiscTab:Toggle({ Title = "Dead Check", Default = true, Callback = function(s) cfg.aim_dead_check = s end })
+MiscTab:Slider({ Title = "FOV Size", Value = { Min = 20, Max = 500, Default = 120 }, Callback = function(v) cfg.aim_fov = v end })
+MiscTab:Slider({ Title = "Smoothness", Value = { Min = 1, Max = 100, Default = 15 }, Callback = function(v) cfg.aim_smoothness = v end })
+MiscTab:Section({ Title = "Console Lock On" })
+MiscTab:Toggle({ Title = "Enable Lock On", Default = false, Callback = function(s) cfg.lock_on_enabled = s; notify("Lock On", s and "Ativado" or "Desativado") end })
+MiscTab:Slider({ Title = "Lock On Range", Value = { Min = 5, Max = 50, Default = 20 }, Callback = function(v) cfg.lock_on_range = v end })
+MiscTab:Section({ Title = "Auto Regen" })
+MiscTab:Toggle({ Title = "Auto Regen (R)", Default = false, Callback = function(s) cfg.auto_regen = s; notify("Auto Regen", s and "Ativado" or "Desativado") end })
+
+local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+PlayerTab:Section({ Title = "Speed Bypass" })
+PlayerTab:Toggle({ Title = "Enable Speed", Default = false, Callback = function(s) cfg.speed_bypass = s; notify("Speed Bypass", s and "Ativado" or "Desativado") end })
+PlayerTab:Slider({ Title = "Speed Value", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) cfg.speed_val = v end })
+PlayerTab:Section({ Title = "Noclip Bypass" })
+PlayerTab:Toggle({ Title = "Enable Noclip", Default = false, Callback = function(s) cfg.noclip_bypass = s; notify("Noclip", s and "Ativado" or "Desativado") end })
+PlayerTab:Slider({ Title = "Push Speed", Value = { Min = 10, Max = 100, Default = 60 }, Callback = function(v) cfg.noclip_speed = v end })
+PlayerTab:Section({ Title = "Fly Bypass" })
+PlayerTab:Toggle({ Title = "Enable Fly", Default = false, Callback = function(s) cfg.fly_bypass = s; notify("Fly", s and "Ativado" or "Desativado") end })
+PlayerTab:Slider({ Title = "Fly Speed", Value = { Min = 16, Max = 500, Default = 100 }, Callback = function(v) cfg.fly_speed = v end })
+PlayerTab:Section({ Title = "Jump Power" })
+PlayerTab:Toggle({ Title = "Enable Jump", Default = false, Callback = function(s) cfg.jump_power_enabled = s; notify("Jump Power", s and "Ativado" or "Desativado") end })
+PlayerTab:Slider({ Title = "Jump Value", Value = { Min = 50, Max = 250, Default = 50 }, Callback = function(v) cfg.jump_power_val = v end })
+PlayerTab:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(s) cfg.inf_jump = s; notify("Infinite Jump", s and "Ativado" or "Desativado") end })
+
+local FarmTab = Window:Tab({ Title = "Farm Halloween", Icon = "leaf" })
+FarmTab:Section({ Title = "Halloween" })
+FarmTab:Toggle({ Title = "Auto Get Player Pumpkin", Default = false, Callback = function(s) cfg.auto_farm_pumpkin = s; notify("Auto Pumpkin", s and "Ativado" or "Desativado") end })
+FarmTab:Slider({ Title = "Pumpkin Speed", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) if set_farm_speed then set_farm_speed(v) end end })
+FarmTab:Toggle({ Title = "Auto Open Door", Default = false, Callback = function(s) cfg.auto_open_door = s; notify("Auto Door", s and "Ativado" or "Desativado") end })
+FarmTab:Slider({ Title = "Door Speed", Value = { Min = 16, Max = 250, Default = 60 }, Callback = function(v) if set_door_speed then set_door_speed(v) end end })
+
+local VisTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
+VisTab:Section({ Title = "Halloween Door ESP" })
+VisTab:Toggle({ Title = "ESP Halloween Door", Default = false, Callback = function(s) cfg.esp_door = s; notify("ESP Door", s and "Ativado" or "Desativado") end })
+VisTab:Section({ Title = "ESP Principal" })
+VisTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(s) cfg.esp_enabled = s; notify("ESP", s and "Ativado" or "Desativado") end })
+VisTab:Toggle({ Title = "Chams", Default = false, Callback = function(s) cfg.esp_chams = s; notify("Chams", s and "Ativado" or "Desativado") end })
+VisTab:Section({ Title = "Elementos" })
+VisTab:Toggle({ Title = "Box", Default = false, Callback = function(s) cfg.esp_box = s end })
+VisTab:Toggle({ Title = "Skeleton", Default = false, Callback = function(s) cfg.esp_skeleton = s end })
+VisTab:Toggle({ Title = "Lines", Default = false, Callback = function(s) cfg.esp_lines = s end })
+VisTab:Toggle({ Title = "Nome", Default = false, Callback = function(s) cfg.esp_name = s end })
+VisTab:Toggle({ Title = "Distância", Default = false, Callback = function(s) cfg.esp_distance = s end })
+VisTab:Toggle({ Title = "Barra de Vida", Default = false, Callback = function(s) cfg.esp_health_bar = s end })
